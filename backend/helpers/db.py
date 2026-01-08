@@ -1,291 +1,512 @@
-from sqlalchemy import Engine, Row, create_engine, insert, text, Table, Column, Integer, Float, String, and_ , Index, ForeignKey, DateTime, select, Connection
-from sqlalchemy.orm import Mapped, defer, mapped_column, Session
-from typing import Sequence, Iterable
-from heapq import nlargest
 import os
+import datetime
+
+from sqlalchemy import (
+    Engine,
+    and_,
+    create_engine,
+    insert,
+    delete,
+    select,
+    update,
+)
+from sqlalchemy.orm import Session
+from dotenv import load_dotenv
 import numpy as np
 
 if os.getcwd().endswith("helpers"):
-    from paths import Path
-    from init_dataset import read_csvs_to_df
-    from preprocessed_movie_model import Base, PreprocessedMovie
+    from db_models import (
+        K,
+        Movie, 
+        PreprocessedMovie, 
+        Recommendation, 
+        LetterboxdUser,
+        Rating, 
+    )
+    from scrape_letterboxd import Ratings
+    from representative import find_representative_movie
 else:
-    from helpers.paths import Path
-    from helpers.init_dataset import read_csvs_to_df
-    from helpers.preprocessed_movie_model import Base, PreprocessedMovie
-        
+    from .db_models import (
+        K,
+        Movie, 
+        PreprocessedMovie, 
+        Recommendation, 
+        LetterboxdUser,
+        Rating, 
+    )
+    from .scrape_letterboxd import Ratings
+    from .representative import find_representative_movie
 
-class Movie(Base):
-    __tablename__ = "movie"
+class add_letterboxd_user:
+    """
+    Context manager for a Letterboxd user's temporarily stored username and ratings.
+    """
+    def __init__(self, session: Session, username: str, ratings: Ratings):
+        self.session = session
+        self.username = username
 
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    imdb_id: Mapped[str | None]
-    poster_url: Mapped[str | None]
-    runtime_seconds: Mapped[int | None]
-    certificate_rating: Mapped[str | None]
-    genres: Mapped[str]
-    spoken_languages: Mapped[str]
-    plot: Mapped[str | None]
-    keywords: Mapped[str]
-    directors: Mapped[str]
-    writers: Mapped[str]
-    actors: Mapped[str]
-    companies: Mapped[str]
+        # Add an entry for the Letterboxd user and retrieve the automatically created id
+        self.session.execute(insert(LetterboxdUser).values({ "username":self.username }))
+        self.session.commit()
+        letterboxd_user_id = self.session.scalar(
+                select(LetterboxdUser.id)
+                .where(LetterboxdUser.username == self.username)
+        )
+        if letterboxd_user_id is None:
+            raise UserInsertionException()
 
+        # Add entries for the user's ratings and match them with `imdb_id`s if possible
+        self.letterboxd_user_id = letterboxd_user_id
+        populate_ratings_table(self.session, self.letterboxd_user_id, ratings)
+        fill_ratings_table_imdb_ids(self.session, self.letterboxd_user_id)
+        self.session.commit()
 
-class Recommendation(Base):
-    __tablename__ = "recommendation"
+    def __enter__(self) -> int:
+        return self.letterboxd_user_id
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    username: Mapped[str]
-    expiration_date = mapped_column(DateTime, nullable=False)
-    movie_id_1 = mapped_column(ForeignKey("movie.id"), nullable=False)
-    movie_id_2 = mapped_column(ForeignKey("movie.id"), nullable=False)
-    movie_id_3 = mapped_column(ForeignKey("movie.id"), nullable=False)
-    movie_id_4 = mapped_column(ForeignKey("movie.id"), nullable=False)
-    movie_id_5 = mapped_column(ForeignKey("movie.id"), nullable=False)
-    movie_id_6 = mapped_column(ForeignKey("movie.id"), nullable=False)
-    movie_id_7 = mapped_column(ForeignKey("movie.id"), nullable=False)
-    movie_id_8 = mapped_column(ForeignKey("movie.id"), nullable=False)
-    movie_id_9 = mapped_column(ForeignKey("movie.id"), nullable=False)
-    movie_id_10 = mapped_column(ForeignKey("movie.id"), nullable=False)
-    
+    def __exit__(self, exception_type, exception_val, exception_traceback):
+        """
+        Deletes the Letterboxd user's username and ratings.
+        """
+        self.session.execute(
+                delete(Rating)
+                .where(Rating.letterboxd_user_id == self.letterboxd_user_id)
+                )
+        self.session.execute(
+                delete(LetterboxdUser)
+                .where(LetterboxdUser.username == self.username)
+                )
 
-class Trailer(Base):
-    __tablename__ = "trailer"
+class NoDataException(Exception):
+    """
+    Raised when the feature vectors for movies of non-empty `Ratings` could not be retrieved.
+    """
+    def __init__(self):
+        super()
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    movie_id = mapped_column(ForeignKey("movie.id"), nullable=False)
-    trailer_id: Mapped[int]
-    
+class UserInsertionException(Exception):
+    """
+    Raised when the `id` of a previously inserted `LetterboxdUser` could not be retrieved.
+    """
+    def __init__(self):
+        super()
+   
 
 def get_engine(echo: bool = False) -> Engine:
-    return create_engine("sqlite+pysqlite:///" + Path.DATABASE, echo=echo)
+    """
+    Creates a sqlalchemy `Engine`. For this to work properly, ensure that if set, any 
+    PostgreSQL environemnt variables (e.g. `PGUSER`, `PGPORT`, etc.), match the values below. 
+    Also, set the `POSTGRESQL_PASSWORD` environment variable, or add it to a .env file. It 
+    must be the same password associated with `PGUSER`/`user`. Note that multiple threads 
+    can share the same `Engine`, but every process must have its own `Engine`. 
+
+    Args:
+        `echo`: If `True`, the database's activity is logged to `STDOUT`.
+
+    Returns:
+        A sqlalchemy `Engine`.
+    """
+    db = "postgresql"
+    db_api = "psycopg"
+    user = "postgres"
+    host = "localhost"
+    port = "5432"
+    db_name = "unboxd"
+    load_dotenv()
+    password = os.getenv("POSTGRESQL_PASSWORD")
+    if password is None:
+        raise ValueError(
+        "Failed to get POSTGRESQL_PASSWORD environment variable.\n"
+        "Please set POSTGRESQL_PASSWORD in a .env file or add it to your environment."
+        )
+    return create_engine(f"{db}+{db_api}://{user}:{password}@{host}:{port}/{db_name}", echo=echo)
 
 
-def init_db():
-    # Reset the db 
-    if os.path.exists(Path.DATABASE):
-        os.remove(Path.DATABASE)
+def populate_ratings_table(session: Session, letterboxd_user_id: int, ratings: Ratings) -> None:
+    """
+    Assigns `letterboxd_user_id` to all the entries in `ratings`, and inserts
+    the result into the table `ratings`.
 
-    engine = get_engine(echo=True)
+    Args:
+        `session`: A sqlalchemy `Session`.
+        `letterboxd_user_id`: An `id` from the table `letterboxd_users`.
+        `ratings`: A sequence of `(original_title, release_year, rating)`.
+    """
+    # The psycopg (DBAPI) cursor is used to be insert `list[tuple]` directly instead of `list[dict]`
+    cur = session.connection().connection.cursor()
+    populate_temp_ratings_table = ("""
+        INSERT INTO ratings (letterboxd_user_id, original_title, release_year, rating, imdb_id) 
+        Values (%s, %s, %s, %s, NULL)"""
+    )
+    ratings_with_ids = [(letterboxd_user_id, *rating) for rating in ratings]
+    cur.executemany(populate_temp_ratings_table, ratings_with_ids)
+    session.commit()
+    print("imdb_ids in ratings before filling: ", session.scalars(select(Rating.imdb_id)).all())
 
-    Base.metadata.create_all(bind=engine)
 
+def fill_ratings_table_imdb_ids(session: Session, letterboxd_user_id: int) -> None:
+    """
+    Updates the `imdb_id`s of entries in the table `ratings` associated with
+    `letterboxd_user_id`, by fetching `imdb_id`s from the table `movies` where 
+    the `original_title` and `release_year` are equal.
+
+    Args:
+        `session`: A sqlalchemy `Session`.
+        `letterboxd_user_id`: An `id` from the table `letterboxd_users`.
+    """
+    session.execute(
+            update(Rating)
+            .where(
+                and_(Rating.letterboxd_user_id == letterboxd_user_id,
+                     Rating.original_title == Movie.original_title,
+                     Rating.release_year == Movie.release_year,
+                     )
+                )
+            .values(imdb_id=Movie.imdb_id)
+            )
+    session.commit()
+    print("imdb_ids in ratings after filling: ", session.scalars(select(Rating.imdb_id)).all())
+
+
+def get_features_and_ratings(session: Session, letterboxd_user_id: int) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Retrieves the feature vectors and rating values of the entries in the table `ratings` 
+    that are associated with `letterboxd_user_id`, and have non-`NULL` `imdb_id`s.
+
+    Args:
+        `session`: A sqlalchemy `Session`.
+        `letterboxd_user_id`: An `id` from the table `letterboxd_users`.
+
+    Returns:
+        `([feature_vector_1, ..., feature_vector_m], [rating_1, ..., rating_m])`
+    """
+    cur = session.execute(
+            select(PreprocessedMovie.features, Rating.rating)
+            .join_from(
+                PreprocessedMovie, 
+                Rating, 
+                PreprocessedMovie.imdb_id == Rating.imdb_id
+                )
+            .where(
+                and_(Rating.letterboxd_user_id == letterboxd_user_id,
+                     Rating.rating != None
+                     )
+                )
+            )
+    rows = cur.fetchall()
+
+    # Split up the data and convert to numpy
+    m = len(rows)
+    ratings_values = np.empty((m,))
+    feature_vectors = np.empty((m,), dtype=np.ndarray)
+    for i, row in enumerate(rows):
+        features, rating = row
+        # `features` are already `np.ndarray`s
+        feature_vectors[i] = features
+        ratings_values[i] = rating
+    return (feature_vectors, ratings_values)
+
+
+def get_k_nearest_neighbor_imdb_ids(session: Session, representative_features: list[float]) -> list[str]:
+    """
+    Retrieves `K` `imdb_id`s of the movies yielding the largest dot (inner) products with the
+    feature vector `representative_features`. Assuming all vectors are normalized, this is
+    equivalent, and more efficient, than computing cosine similarities.
+
+    Args:
+        `session`: A sqlalchemy `Session`.
+        `representative_features`: The feature vector of a user's representative movie.
+
+    Returns:
+        `K` `imdb_id`s
+    """
+    cur = session.scalars(
+            select(PreprocessedMovie.imdb_id)
+            .outerjoin_from(
+                PreprocessedMovie, 
+                Rating, 
+                PreprocessedMovie.imdb_id == Rating.imdb_id
+                )
+            .where(Rating.original_title == None)
+            .order_by(PreprocessedMovie.features.max_inner_product(representative_features))
+            .limit(K)
+            )
+    imdb_ids = list(cur.fetchall())
+    return imdb_ids
+
+
+def get_recommendation_imdb_ids(session: Session, username: str, ratings: Ratings) -> list[str]:
+    """
+    Retrieves `K` `imdb_id`s of movies recommended based on `ratings`.
+
+    Args:
+        `session`: A sqlalchemy `Session`.
+        `ratings`: A sequence of `(original_title, release_year, rating)`.
+
+    Returns:
+        `K` `imdb_id`s
+
+    Raises:
+        `NoDataException` 
+        `UserInsertionException`
+    """
+
+    with add_letterboxd_user(session, username, ratings) as letterboxd_user_id:
+        feature_vectors, rating_values = get_features_and_ratings(session, letterboxd_user_id)
+        if len(feature_vectors) == 0:
+            raise NoDataException()
+
+        representative_index = find_representative_movie(feature_vectors, rating_values)
+
+        # `np.ndarray` must be converted into `list[float]` for insertion into the DB.
+        rep_features = list(feature_vectors[representative_index])
+        recommendation_imdb_ids = get_k_nearest_neighbor_imdb_ids(
+            session, rep_features
+        )
+        return recommendation_imdb_ids
+
+
+def get_expiration_timestamp(num_ratings: int) -> datetime.datetime:
+    """
+    Computes a timezone independent, expiration timestamp for a user's `Recommendation`
+    proportional to `num_ratings`. 
+
+    Args: 
+        `num_ratings`: The number of user ratings scraped from Letterboxd.
+
+    Returns:
+        An expiration timestamp.
+    """
+    # Feel free to adjust these values if they are too easygoing or harsh
+    base_recommendation_ttl_hrs = 0.5
+    recommendation_ttl_hrs_per_100_ratings = 1
+
+    current_timestamp = datetime.datetime.now()
+    expiration_timestamp = current_timestamp + datetime.timedelta(
+        hours=
+        base_recommendation_ttl_hrs
+        + (recommendation_ttl_hrs_per_100_ratings * (num_ratings / 100))
+    )
+    return expiration_timestamp
+
+
+def cache_recommendation(
+        session: Session, 
+        username: str, 
+        num_ratings: int, 
+        recommendation_imdb_ids: list[str],
+        prev_recommendation_has_expired: bool
+) -> None:
+    """
+    Caches a `Recommendation` for `username` that has an expiration timestamp proportional to 
+    `num_ratings`. If `prev_recommendation_has_expired` is `True`, then the previous 
+    `Recommendation`one is updated. Otherwise, a new `Recommendation` is created.
+    
+    The proportional expiration timstamp is utilized because of the assumption: as 
+    `num_ratings` increase, future ratings will have a smaller impact on `username`'s 
+    `Recommendation`. Thus, `Recommendation`s of `username`s with higher `num_ratings` will 
+    take longer to expire than `Recommendation`s of `username`s with lower `num_ratings`.
+
+    Args:
+        `session`: A sqlalchemy `Session`.
+        `username`: A Letterboxd username.
+        `num_ratings`: The number of ratings scraped from `username`'s account.
+        `recommendation_imdb_ids`: The `imdb_id`s of the `Recommendation`.
+        `prev_recommendation_has_expired`: True if a `Recommendation` for 
+            `username` exists, but it has expired.     
+    """
+    assert len(recommendation_imdb_ids) == K
+
+    data = {}
+    data["expiration_timestamp"] = get_expiration_timestamp(num_ratings),
+    for i, imdb_id in enumerate(recommendation_imdb_ids):
+        data[f"imdb_id_{i + 1}"] = imdb_id
+
+    if prev_recommendation_has_expired:
+        stmt = update(Recommendation).where(Recommendation.username.like(username))
+    else:
+        data["username"] = username
+        stmt = insert(Recommendation)
+
+    session.execute(stmt.values(data))
+    session.commit()
+
+def delete_expired_recommendations(engine: Engine) -> None:
+    """
+    Deletes entries from the table `recommendations` where the `expiration_timestamp` 
+    is older than the current time.
+
+    Args:
+        `engine`: A sqlalchemy `Engine`.
+    """
     with Session(engine) as session:
-        session.execute(text("PRAGMA journal_mode = WAL"))
-
-        # session.execute(text("PRAGMA synchronous = normal"))
-        # session.execute(text("PRAGMA temp_store = memory"))
-        # session.execute(text("PRAGMA mmap_size = 30000000000"))
-        # session.execute(text("PRAGMA journal_size_limit = 6144000"))
-        # session.execute(text("PRAGMA page_size = 32768"))
-
-        movies = read_csvs_to_df(Path.MOVIES_FOLDER)
-        preprocessed_movies = read_csvs_to_df(Path.REDUCED_PREPROCESSED_MOVIES_FOLDER)
-
-        # Two `original_title` values disappear into the abyss, so the rows 
-        # they belonged to need to be dropped to adhere to the table schemas
-        movies = movies.dropna(subset=["original_title"])
-        preprocessed_movies = preprocessed_movies.dropna(subset=["original_title"])
-
-        # Remove columns that exist in preprocessed_movies
-        movies = movies.drop(columns=["original_title", "release_year"])
-
         session.execute(
-                insert(Movie),
-                [row._asdict() for row in movies.itertuples(index=False)]
+                delete(Recommendation)
+                .where(Recommendation.expiration_timestamp < datetime.datetime.now())
                 )
-        session.execute(
-                insert(PreprocessedMovie),
-                [row._asdict() for row in preprocessed_movies.itertuples(index=False)]
-                )
-
-        preprocessed_movie_index = Index(
-                "ix_original_title_release_year", 
-                PreprocessedMovie.original_title, 
-                PreprocessedMovie.release_year, 
-                unique=True
-                )
-        preprocessed_movie_index.create(engine)
-  
-        # session.execute(text("PRAGMA vacuum"))
-        # session.execute(text("PRAGMA optimize"))
-                    
         session.commit()
 
 
-"""
-    - `expiration_date` set with timer proportional to the number of the user's rating
-        - most pages of reviews i've seen is 79
-        - on the next post /usernames/, if the timer expired:
-            - update the recs, timer, and `UPDATE` the table
-    - still store status in memory
-        - delete from dict when done with system
-        - for /status/ check in status first
-            - if not there, check recommendations to see if shi already done
-                - add new status: shi expired, you can run yo pockets again or just get the outdated recs
-"""
-
-
-test = [
-        {"original_title": "Five Nights at Freddy's 2", "release_year": 2025, "rating": 3.0},
-        {"original_title": "Avatar: Fire and Ash", "release_year": 2025, "rating": 3.0},
-        {"original_title": "Marty Supreme", "release_year": 2025, "rating": 4.0},
-        {"original_title": "Chainsaw Man – The Movie: Reze Arc", "release_year": 2025, "rating": 5.0},
-        {"original_title": "The Conjuring: Last Rites", "release_year": 2025, "rating": 2.0},
-        {"original_title": "Demon Slayer: Kimetsu no Yaiba Infinity Castle", "release_year": 2025, "rating": None},
-        {"original_title": "The Fragrant Flower Blooms with Dignity", "release_year": 2025, "rating": 4.0},
-        {"original_title": "Takopi's Original Sin", "release_year": 2025, "rating": 3.0},
-        {"original_title": "KPop Demon Hunters", "release_year": 2025, "rating": 3.0},
-        {"original_title": "F1", "release_year": 2025, "rating": None}
-        ]
-
-
-class create_temp_user_table:
-    def __init__(
-            self, 
-            engine: Engine, 
-            con: Connection, 
-            username: str, 
-            data: list[dict[str, str | int | float | None]]
-                 ):
-        self.engine = engine
-        self.user_table = Table(
-                username,
-                Base.metadata,
-                Column("id", Integer, primary_key=True),
-                Column("original_title", String),
-                Column("release_year", Integer),
-                Column("rating", Float, nullable=True),
-                prefixes=["TEMPORARY"]
-                )
-        self.data = data
-        self.user_table.create(self.engine)
-        con.execute(insert(self.user_table), data)
-        con.commit()
-
-    def __enter__(self) -> Table:
-        return self.user_table
-
-    def __exit__(self, exception_type, exception_val, exception_traceback):
-        self.user_table.drop(self.engine)
-
-
-def rated_preprocessed_movies(con: Connection, user_table: Table) -> Sequence[Row[tuple]]:
+def delete_recommendations(engine: Engine) -> None:
     """
+    Deletes all entries from `recommendations`.
+
     Args:
-    `con`: sqlalchemy `Engine` `Connection`
-    `user_table`: a sqlalchemy `Table` created using `create_temp_user_table`
-
-    Returns:
-    `(rating, id, feature_1, ..., feature_n)` 
-    where `id` is an `int` < 700,000, and `rating` and `feature_x` are `float`s,
-    for each user rated movie that could be matched with a movie from `preprocessed_movie`
+        `engine`: A sqlalchemy `Engine`.
     """
-    cur = con.execute(
-            select(user_table.c.rating, PreprocessedMovie)
-            .join_from(
-                user_table, 
-                PreprocessedMovie, 
-                and_(
-                    user_table.c.original_title == PreprocessedMovie.original_title,
-                    user_table.c.release_year == PreprocessedMovie.release_year
-                    )
-                )
-            # Exclude movies that don't have ratings (i.e. were only liked on Letterboxd)
-            .where(user_table.c.rating != None)
-            # `PreprocessedMovie.id` is sufficient for matching with `movie`, so these aren't necessary
-            .options(
-                defer(PreprocessedMovie.original_title), 
-                defer(PreprocessedMovie.release_year)
-                )
+    with Session(engine) as session:
+        session.execute(delete(Recommendation))
+        session.commit()
+
+
+def get_movies(session: Session, imdb_ids: list[str]) -> list[Movie]:
+    """
+    Retrieves the `Movie`s associated with `imdb_ids`.
+
+    Args:
+        `session`: A sqlalchemy `Session`.
+        `imdb_ids`: The `imdb_id`s of the `Movie`s to retrieve.
+    """
+    cur = session.scalars(
+            select(Movie)
+            .where(Movie.imdb_id.in_(imdb_ids))
             )
-    return cur.fetchall() 
+    return list(cur.all())
 
 
-# def find_representative_movie(movies: np.ndarray, weights: list[float]) -> int:
+def cache_trailer_ids(session: Session, imdb_ids: list[str], trailer_ids: list[str]) -> None:
+    """
+    Updates the `trailer_id` of entries of table `movies` corresponding to `imdb_ids`,
+    with the values in `trailer_ids`.
 
-def rated_preprocessed_to_np(rows: Sequence[Row[tuple]]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    Args:
+        `session`: A sqlalchemy `Session`.
+        `imdb_ids`: The `imdb_id`s of entries in `movies` with `NULL` `trailer_id`s. 
+        `trailer_ids`: The YouTube trailer video ids of the movies corresponding to `imdb_ids`.
+    """
+    # The psycopg (DBAPI) cursor is used to be insert `list[tuple]` directly instead of `list[dict]`
+    cur = session.connection().connection.cursor()
+    data = list(zip(trailer_ids, imdb_ids))
+    cur.executemany("""UPDATE movies SET trailer_id = %s WHERE imdb_id = %s""", data)
+    session.commit()
+
+
+def get_cached_recommendation(session: Session, username: str) -> Recommendation | None:
     """
     Args:
-    `rows`: (`rating`, `id`, `feature_1`, ..., `feature_n`), where `id` is an `int` < 700,000,
-    and `rating` and `feature_x` are floats
-
+        `session`: A sqlalchemy `Session`.
+        `username`: A Letterboxd username.
     Returns:
-    `(
-    [[feature_1_1, ..., feature_1_n], ..., [feature_m_1, ..., feature_m_n]],
-    [id_1, ..., id_m],
-    [rating_1, ..., rating_m]
-    )`
+        `username`'s cached `Recommendation` (even if it expired), or `None`.
     """
-
-    m = len(rows)
-    assert m != 0
-
-    id_col = 0
-    rating_col = 1
-    features_start_col = 2
-    assert len(rows[0]) > features_start_col
-
-    movie_features = np.empty((m,), dtype=np.ndarray)
-    ids = np.empty((m,), dtype=np.int32)
-    ratings = np.empty((m,))
-
-    for i, row in enumerate(rows):
-        movie_features[i] = np.array(row[features_start_col:], dtype=np.float64)
-        ids[i] = row[id_col]
-        ratings[i] = row[rating_col]
-
-    return (movie_features, ids, ratings)
-
-
-def unwatched_preprocessed_movies(con: Connection, user_table: Table) -> Iterable[Row[tuple]]:
-    """
-    Args:
-    `con`: sqlalchemy engine `Connection`
-    `user_table`: a sqlalchemy `Table` created using `create_temp_user_table`
-
-    Returns:
-    `(id, feature_1, ..., feature_n)` where `id` is an `int` < 700,000, 
-    and `feature_x` are `float`s, for each movie from `preprocessed_movie` not watched 
-    (i.e liked or rated) by the user
-    """
-    cur = con.execute(
-            select(PreprocessedMovie)
-            .outerjoin_from(
-                PreprocessedMovie, 
-                user_table, 
-                and_(
-                    user_table.c.original_title == PreprocessedMovie.original_title,
-                    user_table.c.release_year == PreprocessedMovie.release_year
-                    )
-                )
-            # This holds for movies that could not be matched
-            .where(user_table.c.original_title == None)
-            # `PreprocessedMovie.id` is sufficient for matching with `movie`, so these aren't necessary
-            .options(
-                defer(PreprocessedMovie.original_title), 
-                defer(PreprocessedMovie.release_year)
-                )
+    recommendation = session.scalar(
+            select(Recommendation)
+            .where(Recommendation.username == username)
             )
-    for row in cur:
-        yield row
-    cur.close()
+    return recommendation
 
-# def select_recommendations():
 
-def select_representative(username: str) -> None:
-    # using Connection over Session to immediately unpack values
-    with engine.connect() as con:
-        with create_temp_user_table(engine, con, username, test) as user_table:
-            print(rated_preprocessed_movies(con, user_table))
+def extract_imdb_ids_from_recommendation(recommendation: Recommendation) -> list[str]:
+    """
+    Args:
+        `recommendation`: The `Recommendation` to extract `imdb_id`s from.
+    Returns:
+        The `imdb_id`s from `recommendation`.
+    """
+    # This is a more flexible way of extracting the imdb_ids, if ever needed
+    # imdb_id_attrs = [attr for attr in dir(recommendation) if attr.startswith("imdb_id")]
+    # imdb_ids = [recommendation.__getattribute__(attr) for attr in imdb_id_attrs]
+
+    imdb_ids = [
+            recommendation.imdb_id_1,
+            recommendation.imdb_id_2,
+            recommendation.imdb_id_3,
+            recommendation.imdb_id_4,
+            recommendation.imdb_id_5,
+            recommendation.imdb_id_6,
+            recommendation.imdb_id_7,
+            recommendation.imdb_id_8,
+            recommendation.imdb_id_9,
+            recommendation.imdb_id_10,
+            ]
+    return imdb_ids
+
+
+def is_expired(recommendation: Recommendation) -> bool:
+    """
+    Args:
+        `recommendation`: The `Recommendation` check for expiration.
+    Returns:
+        `True` if `recommendation`'s `expiration_timestamp` is older than the current time.
+    """
+    return recommendation.expiration_timestamp < datetime.datetime.now();
+
+
+def mock_recommendation_system():
+    engine = get_engine()
+    ratings = [
+            ("Five Nights at Freddy's 2", 2025, 3.0),
+            ("Avatar: Fire and Ash", 2025, 3.0),
+            ("Marty Supreme", 2025, 4.0),
+            ("Chainsaw Man – The Movie: Reze Arc", 2025, 5.0),
+            ("The Conjuring: Last Rites", 2025, 2.0),
+            ("Demon Slayer: Kimetsu no Yaiba Infinity Castle", 2025, None),
+            ("The Fragrant Flower Blooms with Dignity", 2025, 4.0),
+            ("Takopi's Original Sin", 2025, 3.0),
+            ("KPop Demon Hunters", 2025, 3.0),
+            ("F1", 2025, None),
+            ]
+    username = 'username' 
+
+
+    with Session(engine) as session:
+        print("Getting recommendation imdb_ids...")
+        try:
+            recommendation_imdb_ids = get_recommendation_imdb_ids(session, username, ratings)
+        except NoDataException:
+            print("This shouldn't have happened part 1")
+            return
+        except UserInsertionException:
+            print("This shouldn't have happened part 2")
+            return
+        assert len(recommendation_imdb_ids) == 10
+
+        print("Pre-caching recommendation...")
+        print(get_cached_recommendation(session, username))
+
+        print("Caching recommendation...")
+        cache_recommendation(session, username, len(ratings), recommendation_imdb_ids, False)
+
+        print("Post-caching recommendation...")
+        print(get_cached_recommendation(session, username))
+
+        print("Post-expiration recommendation...")
+        # Simulate recommendation expiration
+        session.execute(delete(Recommendation))
+        session.commit()
+        print(get_cached_recommendation(session, username))
+
+        print("Getting corresponding movies...")
+        movies = get_movies(session, recommendation_imdb_ids)
+        print("Initial movie trailer_ids:")
+        print([movie.trailer_id for movie in movies])
+
+        print("Scraping trailer ids...")
+        trailer_ids = [
+                'BbzwLMIgcNQ', 'sU_SQo1wbos', 'pZEvB2z644U', 'PFB-M1suyuY', 
+                'OTbhQ0ct1as', 'ZK92E588K-0', '1NIXWgBkJNU', 'GLEY5ea3HjU', 
+                'EIhlE3lfu6w', '0t-xZOwFHjE'
+                ]
+        print(trailer_ids)
+
+        print("Caching trailer ids...")
+        cache_trailer_ids(session, recommendation_imdb_ids, trailer_ids)
+
+        print("Post-caching movie trailer_ids:")
+        movies = get_movies(session, recommendation_imdb_ids)
+        print([movie.trailer_id for movie in movies])
+
 
 if __name__ == "__main__":
-    engine = get_engine(echo=True)
-    for i in range(10):
-        select_representative(f'username')
-    # init_db()
-else:
-    engine = get_engine(echo=True)
-
+    mock_recommendation_system()
+    

@@ -1,7 +1,6 @@
 .vscode/
 **/.venv/
+**/.env
 **/__pycache__/
 **/.DS_Store
-# exclude all data except the split, initialized movies dataset
-backend/data/
-!backend/data/movies/
+backend/data/*
