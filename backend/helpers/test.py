@@ -1,9 +1,11 @@
+import os
 import numpy as np
 
-if __name__ == "__main__":
+if os.getcwd().endswith("helpers"):
     from models import Movie
 else:
     from .models import Movie
+
 
 dummy_data = [
     Movie(

@@ -1,7 +1,6 @@
 from datetime import datetime
 import os
-
-from sqlalchemy import ForeignKey, DateTime, Integer, Float, String, Identity
+from sqlalchemy import ForeignKey, DateTime, Integer, Float, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import JSONB
 from pgvector.sqlalchemy import VECTOR
@@ -33,7 +32,7 @@ class Movie(Base):
     trailer_id: Mapped[str | None] = mapped_column(String, nullable=True)
     genres: Mapped[list[str]] = mapped_column(JSONB)
     """
-    The choice between JSON and JSONB to store `genres` is kind of arbitrary in our case:
+    The choice between JSON and JSONB to store `genres` is somewhat arbitrary in our case:
     JSONB ignores whitespace between tokens, is faster to process than JSON, can be 
     indexed, and supports more operators than JSON, but it is slower to insert than JSON.
     However, we don't do any operations on `genres`, and we aren't inserting genres after 
@@ -50,10 +49,17 @@ class PreprocessedMovie(Base):
     features: Mapped[list[float]] = mapped_column(VECTOR(N_COMPONENTS))
 
 
+class LetterboxdUser(Base):
+    __tablename__ = LETTERBOXD_USERS_TABLE_NAME
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String)
+    
+
 class Recommendation(Base):
     __tablename__ = RECOMMENDATIONS_TABLE_NAME
 
-    username: Mapped[str] = mapped_column(primary_key=True)
+    letterboxd_user_id: Mapped[int] = mapped_column(ForeignKey(f"{LETTERBOXD_USERS_TABLE_NAME}.id"), primary_key=True)
     expiration_timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     imdb_id_1: Mapped[str] = mapped_column(ForeignKey(f"{MOVIES_TABLE_NAME}.imdb_id"), nullable=False)
     imdb_id_2: Mapped[str] = mapped_column(ForeignKey(f"{MOVIES_TABLE_NAME}.imdb_id"), nullable=False)
@@ -66,13 +72,6 @@ class Recommendation(Base):
     imdb_id_9: Mapped[str] = mapped_column(ForeignKey(f"{MOVIES_TABLE_NAME}.imdb_id"), nullable=False)
     imdb_id_10: Mapped[str] = mapped_column(ForeignKey(f"{MOVIES_TABLE_NAME}.imdb_id"), nullable=False)
     
-
-class LetterboxdUser(Base):
-    __tablename__ = LETTERBOXD_USERS_TABLE_NAME
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    username: Mapped[str] = mapped_column(String)
-
 
 class Rating(Base):
     __tablename__ = RATINGS_TABLE_NAME

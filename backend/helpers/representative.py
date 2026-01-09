@@ -3,9 +3,9 @@ import numpy as np
 
 def find_representative_movie(movies: np.ndarray, weights: np.ndarray) -> int:
     """
-    Find the most representative movie from a list of movies based on a weighted total dot product.
-    Assuming the feature vectors are normalized, this is equivalent to a weighted total cosine 
-    similarity.
+    Find the most representative movie from a list of movies based on a weighted total dot 
+    product. Assuming the feature vectors are normalized, this is equivalent to a weighted 
+    total cosine similarity.
     Args:
         `movies`: Feature vectors of movies.
         `weights`: Weights corresponding to the user rating of each movie.

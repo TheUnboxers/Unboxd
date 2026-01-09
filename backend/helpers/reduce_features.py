@@ -1,7 +1,6 @@
 import os
 import sys
 import warnings
-
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -20,23 +19,23 @@ else:
 COL_TO_DUMP = "features"
 N_COMPONENTS = 90
 """
-90 components explain 80% of the total variance. If this value is changed, 
-the database must be reinitialized, see `Unboxd/DEVELOPMENT.md` for details.
+90 components explain 80% of the total variance. This is the length of the feature
+vectors stored in the preprocessed_movies table in the database. To reflect changes
+to this value, the database should be reinitialized after recreating the 
+`reduced_preprocessed_movies` dataset.
 """
 
 
 def reduce_features_and_normalize(df: pd.DataFrame, n_components: int | None) -> pd.DataFrame:
     """
     Performs feature reduction and normalization on the preprocessed movies dataset, `df`,
-    plotting the results if `n_components` is not specified.
-
+    an and plots the results of all possible value of `n_components` if `n_components` 
+    is not specified.
     Args:
         `df`: The preprocessed movies dataset.
-        `n_components`: The number of components to reduce down to, or `None`
-                to plot the results of all possible values of `n_components`.
-
+        `n_components`: The number of components to reduce down to.
     Returns:
-        A `DataFrame` containing `imdb_id`s and feature reduced, normalized feature vectors.
+        A `DataFrame` of `imdb_id`s and reduced, normalized feature vectors.
     """
     print("Performing feature reduction...")
     saved_cols = ["imdb_id"]
@@ -48,6 +47,7 @@ def reduce_features_and_normalize(df: pd.DataFrame, n_components: int | None) ->
         n_components = len(df)
         plot_results = True
 
+    # Ignore warning about sparse data being converted to dense 
     warnings.filterwarnings("ignore")
     feature_reducer = TruncatedSVD(n_components)
     reduced_data = feature_reducer.fit_transform(df)
@@ -118,3 +118,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

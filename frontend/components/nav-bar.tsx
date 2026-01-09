@@ -9,13 +9,26 @@ import { ModeToggle } from "@/components/theme-toggle"
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 const navItems = [
-  { href: "/", label: "Home" },
-  { href: "https://github.iu.edu/B365-Fall2025/Project-ez2-ermili-cch8-dvchavan", label: "Docs", isExternal: true },
+  { href: "/", 
+    label: "Home" },
+
+  { href: "https://github.iu.edu/B365-Fall2025/Project-ez2-ermili-cch8-dvchavan", 
+    label: "Docs", 
+    isExternal: true },
 ]
 
-export function NavBar({ username, setUsername, handleSubmit }){
+export function NavBar({ username } : { username: string | null }) {
+  const [user, setUser] = useState(username?.toString() || "");
+  const router = useRouter();
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+     router.push(`/recommendations?username=${user}`);
+  };
+
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/55 backdrop-blur-md">
       <div className="container mx-auto p-4 sm:px-6 lg:px-8 flex justify-between gap-4">
@@ -38,8 +51,8 @@ export function NavBar({ username, setUsername, handleSubmit }){
                 id="username"
                 type="text"
                 placeholder="username"
-                value={username}                
-                onChange={(e) => setUsername(e.target.value)} 
+                value={user}                
+                onChange={(e) => setUser(e.target.value)} 
                 autoComplete="off"/>
               <InputGroupAddon align="inline-end">
                 <InputGroupButton
@@ -48,7 +61,7 @@ export function NavBar({ username, setUsername, handleSubmit }){
                   size="icon-xs"
                   variant="link"
                   className="text-muted-foreground hover:text-foreground"
-                  onClick={() => setUsername("")}
+                  onClick={() => setUser("")}
                 >
                   <X />
                 </InputGroupButton>

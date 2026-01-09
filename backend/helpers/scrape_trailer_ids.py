@@ -1,10 +1,9 @@
 import os
 import time
 import requests
-
 from tqdm import tqdm
 
-if __name__ == "__main__" or os.getcwd().endswith("helpers"):
+if os.getcwd().endswith("helpers"):
     from db_models import Movie
 else:
     from .db_models import Movie
@@ -47,10 +46,3 @@ def scrape_trailer_ids(movies: list[Movie], print_status: bool = False) -> list[
         time.sleep(2)
     return trailer_ids
 
-
-def main():
-    pass
-
-
-if __name__ == "__main__":
-    main()

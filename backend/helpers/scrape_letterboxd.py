@@ -3,9 +3,14 @@ import itertools
 import time
 import sys
 import os
-
 import bs4
 import pandas as pd
+
+if os.getcwd().endswith("helpers"):
+    from paths import Path
+else:
+    from .paths import Path
+
 
 SCRAPED_COLUMNS = ["original_title", "release_year", "user_rating"]
 
@@ -27,12 +32,16 @@ def scrape_ratings(username: str, print_status: bool = False) -> Ratings:
             time.sleep(2)
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
-            if print_status:
-                print(f"failed to get {page_url} because {e}")
+            if print_status: print(f"failed to get {page_url} because {e}")
+            """
+            A retry mechanism is worth implementing, but the scraper currently 
+            needs to stop here. Otherwise, the scraper keeps requesting 
+            for pages that do not exist, and it does not terminate.
+            """
             break
         html = response.text
 
-        # using lxml over builtin html.parser for speed
+        # Using lxml over builtin html.parser for speed
         soup = bs4.BeautifulSoup(markup=html, features="lxml")
 
         films = soup.find_all(name="li", class_="griditem")
@@ -69,13 +78,11 @@ def scrape_ratings(username: str, print_status: bool = False) -> Ratings:
             data.append((original_title, release_year, user_rating))
 
         page_numbers = soup.find_all(name="li", class_="paginate-page")
-        # should not happen
         if len(page_numbers) == 0:
             break
         last_page_number = int(page_numbers.pop().get_text())
         if page_number == last_page_number:
             break
-
     if print_status:
         print("finished scraping")
     return data
@@ -100,18 +107,17 @@ def scrape_pfp_url(username: str) -> str:
     except Exception:
         return ""
 
-def main():
-    from paths import Path
-    username = sys.argv[1]
 
+def main():
+    username = sys.argv[1]
     if "ratings" in sys.argv:
         data = scrape_ratings(username, print_status=True)
         os.makedirs(Path.RATINGS_FOLDER, exist_ok=True)
         df = pd.DataFrame(data, columns=SCRAPED_COLUMNS)
         df.to_csv(os.path.join(Path.RATINGS_FOLDER, f"{username}.csv"), index=False)
-
     if "pfp" in sys.argv:
         print("pfp url:", scrape_pfp_url(username))
+
 
 if __name__ == "__main__":
     main()

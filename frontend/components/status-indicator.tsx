@@ -8,13 +8,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { RefreshCcwIcon } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
-import { BackendError, ExtendedStatus } from "@/app/recommendations/page";
+import { BackendError, ExtendedStatus } from "@/hooks/recommendations";
 
 export function StatusIndicator({status, backendError}: {status: ExtendedStatus, backendError: BackendError}) {
   const isUnexpectedError = backendError === BackendError.UNEXPECTED;
   const isUnclearError = backendError === BackendError.UNCLEAR_CAUSE_OF_FAILURE;
-  const isImpossibleRequestError = backendError === BackendError.IMPOSSIBLE_REQUEST;
-  const isError = isUnexpectedError || isUnclearError || isImpossibleRequestError;
+  const isError = backendError !== BackendError.NONE;
 
   const refreshPage = () => {
     window.location.reload(); 
@@ -31,20 +30,18 @@ export function StatusIndicator({status, backendError}: {status: ExtendedStatus,
             </EmptyTitle>
 
             <EmptyDescription>
-              {isUnclearError && "If this is not the case, blame Letterboxd, and please try again" }
-            </EmptyDescription>
-
-            <EmptyDescription>
+              {isUnclearError && "If this seems off, please try again" }
               {isUnexpectedError && "Something went wrong, please try again" }
             </EmptyDescription>
           </EmptyHeader>
 
-          {(isUnclearError|| isUnexpectedError) && <EmptyContent>
-              <Button variant="outline" size="sm" onClick={refreshPage}>
-              <RefreshCcwIcon />
-              Refresh
-            </Button>
-          </EmptyContent>}
+          {isError && 
+            <EmptyContent>
+                <Button variant="outline" size="sm" onClick={refreshPage}>
+                <RefreshCcwIcon />
+                Retry
+              </Button>
+            </EmptyContent>}
         </Empty>
       </div>
     </section>

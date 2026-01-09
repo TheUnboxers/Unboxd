@@ -1,11 +1,9 @@
 import os
-
 from sqlalchemy import text, Index
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 from psycopg import sql
 from tqdm import tqdm 
 import pandas as pd
-
 from paths import Path
 from init_dataset import (
     folder_paths,
@@ -19,7 +17,9 @@ from reduce_features import reduce_features_and_normalize, N_COMPONENTS, COL_TO_
 from db_models import (
     Base, 
     Movie, 
+    LetterboxdUser,
     Recommendation, 
+    PreprocessedMovie,
     MOVIES_TABLE_NAME, 
     PREPROCESSED_MOVIES_TABLE_NAME
 )
@@ -30,7 +30,6 @@ def create_trimmed_movies_dataset(movies: pd.DataFrame) -> None:
     """
     Prepares the columns of the movies dataset needed by the DB for the `movies`
     table and saves the result.
-
     Args:
         `movies`: The movies dataset.
     """
@@ -56,7 +55,6 @@ def ensure_existence_of_trimmed_movies_dataset() -> pd.DataFrame | None:
     """
     Ensures the existence of the trimmed_movies dataset (i.e. the desired 
     columns of the movies dataset).
-
     Returns:
         The movies dataset.
     """
@@ -77,7 +75,6 @@ def ensure_existence_of_trimmed_movies_dataset() -> pd.DataFrame | None:
 def ensure_existence_of_reduced_preprocessed_movies_dataset(movies: pd.DataFrame | None):
     """
     Ensures the existence of the reduced_preprocessed_movies dataset.
-
     Args:
         `movies`: The movies dataset.
     """
@@ -106,7 +103,6 @@ def copy_to_table_from_csvs(session: Session, table_name: str, folder_path: Path
     """
     Copies to the DB table specified by `table_name` from the csv files located in 
     `folder_path`. This is the fastest method of adding the data from `folder_path`.
-
     Args:
         `session`: A sqlalchemy `Session`.
         `table_name`: The name of the table to copy the data to.
@@ -129,48 +125,58 @@ def init_db():
     Initializes the database. Creates the pgvector extension, populates the `movies` 
     and `preprocessed_movies` tables, and adds indexes to optimize data retrieval.
     """
-    # Log the activity of the DB
     engine = get_engine(echo=True)
+    Session = sessionmaker(engine)
 
     # Create the pgvector extension before creating any tables
-    with Session(engine) as session:
+    with Session() as session:
         session.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         session.commit()
 
     # Reset all tables
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
   
-    with Session(engine) as session:
+    with Session() as session:
         # Initialize `movies` with the trimmed_movies dataset
         copy_to_table_from_csvs(session, MOVIES_TABLE_NAME, Path.TRIMMED_MOVIES_FOLDER)
 
-        # Index on `imdb_id` to optimize user representative k-NN information retrieval
-        movie_imdb_id_index = Index("ix_imdb_id", Movie.imdb_id, unique=True)
-        movie_imdb_id_index.create(engine)
-        session.commit()
+        # Optimize recommendation information retrieval
+        movies_imdb_id_index = Index("movies_imdb_id_idx", Movie.imdb_id, unique=True)
+        movies_imdb_id_index.create(engine)
 
-        # Index on `original_title` and `release_year` to optimize scraped rating `imdb_id` retrieval
-        movie_title_year_index = Index(
-            "ix_original_title_release_year",
+        # Optimize rated movie `imdb_id` retrieval
+        Index(
+            "movies_original_title_release_year_idx",
             Movie.original_title,
             Movie.release_year,
             unique=True,
-        )
-        movie_title_year_index.create(engine)
-        session.commit()
+        ).create(engine)
+
+        # Optimize `letterboxd_user_id` retrieval 
+        Index(
+            "letterboxd_users_username_idx", LetterboxdUser.username, unique=True
+        ).create(engine)
+
+        # Optimize operations on the cache
+        Index(
+            "recommendations_letterboxd_user_id_idx", 
+            Recommendation.letterboxd_user_id, 
+            unique=True
+        ).create(engine)
 
         # Initialize `preprocessed_movies` with the reduced_preprocessed_movies dataset
         copy_to_table_from_csvs(
             session, PREPROCESSED_MOVIES_TABLE_NAME, Path.REDUCED_PREPROCESSED_MOVIES_FOLDER
         )
 
-        # Index on `username` to optimize the checking the cache, and retrieval from it
-        recommendation_username_index = Index(
-                "ix_username", Recommendation.username, unique=True
-                )
-        recommendation_username_index.create(engine)
+        # Optimize feature vector retrieval 
+        Index(
+            "preprocessed_movies_imdb_id_idx", PreprocessedMovie.imdb_id, unique=True
+        ).create(engine)
 
+        session.commit()
+        
 
 if __name__ == "__main__":
     movies = ensure_existence_of_trimmed_movies_dataset()
