@@ -134,11 +134,11 @@ def recommendation_system(username: str) -> None:
     with letterboxd_scraper_lock:
         status[username] = Status.SCRAPING_RATINGS
         try:
-            ratings = scrape_ratings(username)
+            scraped_ratings = scrape_ratings(username)
         except Exception:
             status[username] = Status.FAILED_SCRAPING
             return
-    if len(ratings) == 0:
+    if len(scraped_ratings) == 0:
         status[username] = Status.FAILED_NO_RATINGS
         return
 
@@ -152,7 +152,7 @@ def recommendation_system(username: str) -> None:
             return
         try:
             recommendation_imdb_ids = get_recommendation_imdb_ids(
-                session, letterboxd_user_id, ratings
+                session, letterboxd_user_id, scraped_ratings
             )
         except NoDataException:
             status[username] = Status.FAILED_NO_DATA
@@ -160,7 +160,9 @@ def recommendation_system(username: str) -> None:
         if len(recommendation_imdb_ids) == 0:
             status[username] = Status.FAILED_NO_RECOMMENDATIONS
             return
-        cache_recommendation(session, letterboxd_user_id, len(ratings), recommendation_imdb_ids)
+        cache_recommendation(
+            session, letterboxd_user_id, len(scraped_ratings), recommendation_imdb_ids
+        )
         movies = get_movies(session, recommendation_imdb_ids)
         movies_without_trailer_ids = [movie for movie in movies if movie.trailer_id is None]
 
@@ -255,9 +257,9 @@ def get_recommendation(username: Annotated[str, ProperlyFormedLetterboxdUsername
         if recommendation is None:
             raise HTTPException(
                 status_code=HTTPStatus.NOT_FOUND,
-                detail=f"There is no recommendation for {username}. Either the recommendation \
-                        system has not started, or a previous recommendation was deleted after \
-                        it expired, or the system is in progress"
+                detail=f"There is no recommendation for {username}. Either the \
+                        recommendation system has not started, or a previous recommendation \
+                        was deleted after it expired, or the system is in progress"
             )
 
         recommendation_imdb_ids = extract_imdb_ids_from_recommendation(recommendation)

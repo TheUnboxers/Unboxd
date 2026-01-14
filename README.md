@@ -64,7 +64,7 @@ These are example values, but it is likely that you will use these. Also, these 
 may already be set by PostgreSQL during installation.
 
 ```
-PGPASS=<insert_password_used_to_setup_posgres_here>
+PGPASSWORD=<insert_password_used_to_setup_posgres_here>
 ```
 > This one needs to be set manually.
 

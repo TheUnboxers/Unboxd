@@ -13,15 +13,14 @@ else:
 
 
 SCRAPED_COLUMNS = ["original_title", "release_year", "user_rating"]
+type ScrapedRating = tuple[str, int, float | None]
 
-type Ratings = list[tuple[str, int, float | None]]
 
-
-def scrape_ratings(username: str, print_status: bool = False) -> Ratings:
+def scrape_ratings(username: str, print_status: bool = False) -> list[ScrapedRating]:
     """Returns the scraped Letterboxd ratings of `username`"""
     if print_status:
         print("starting scraping ratings")
-    data: list[tuple[str, int, float | None]] = []
+    scraped_ratings: list[ScrapedRating] = []
     page_url = "https://letterboxd.com/{}/films/page/{}/"
 
     for page_number in itertools.count(start=1, step=1):
@@ -75,7 +74,7 @@ def scrape_ratings(username: str, print_status: bool = False) -> Ratings:
                     "★"
                 ) + 0.5 * user_rating_symbols.count("½")
 
-            data.append((original_title, release_year, user_rating))
+            scraped_ratings.append((original_title, release_year, user_rating))
 
         page_numbers = soup.find_all(name="li", class_="paginate-page")
         if len(page_numbers) == 0:
@@ -85,7 +84,7 @@ def scrape_ratings(username: str, print_status: bool = False) -> Ratings:
             break
     if print_status:
         print("finished scraping")
-    return data
+    return scraped_ratings
 
 
 def scrape_pfp_url(username: str) -> str:

@@ -24,7 +24,7 @@ if os.getcwd().endswith("helpers"):
         LetterboxdUser,
         Rating, 
     )
-    from scrape_letterboxd import Ratings
+    from scrape_letterboxd import ScrapedRating
     from representative import find_representative_movie
 else:
     from .db_models import (
@@ -35,7 +35,7 @@ else:
         LetterboxdUser,
         Rating, 
     )
-    from .scrape_letterboxd import Ratings
+    from .scrape_letterboxd import ScrapedRating
     from .representative import find_representative_movie
        
 
@@ -46,7 +46,8 @@ RECOMMENDATION_TTL_HRS_PER_100_RATINGS = 1
 
 class NoDataException(Exception):
     """
-    Raised when the feature vectors for movies of non-empty `Ratings` could not be retrieved.
+    Raised when the feature vectors for movies of non-empty `list[ScrapedRating]` could 
+    not be retrieved.
     """
     def __init__(self):
         super()
@@ -64,13 +65,16 @@ class add_letterboxd_user_ratings:
     """
     Context manager for a Letterboxd user's temporarily stored ratings.
     """
-    def __init__(self, session: Session, letterboxd_user_id: int, ratings: Ratings):
+    def __init__(
+        self, session: Session, letterboxd_user_id: int, scraped_ratings: list[ScrapedRating]
+    ):
         """
-        Adds the Letterboxd user's `ratings` and matches them with `imdb_id`s if possible.
+        Adds the Letterboxd user's `scraped_ratings` and matches them with `imdb_id`s 
+        if possible.
         """
         self.session = session
         self.letterboxd_user_id = letterboxd_user_id
-        populate_ratings_table(self.session, self.letterboxd_user_id, ratings)
+        populate_ratings_table(self.session, self.letterboxd_user_id, scraped_ratings)
         fill_ratings_table_imdb_ids(self.session, self.letterboxd_user_id)
         self.session.commit()
 
@@ -79,7 +83,7 @@ class add_letterboxd_user_ratings:
 
     def __exit__(self, exception_type, exception_val, exception_traceback):
         """
-        Deletes the Letterboxd user's ratings.
+        Deletes the Letterboxd user's stored ratings.
         """
         self.session.execute(
             delete(Rating)
@@ -90,9 +94,9 @@ class add_letterboxd_user_ratings:
 def get_engine(echo: bool = False) -> Engine:
     """
     Creates a sqlalchemy `Engine`. For this to work properly, ensure that the
-    environment variables `PGUSER`, `PGHOST`, `PGPORT`, and `PGPASS` are set with 
-    the values matching the ones used during the PostgreSQL installation. While
-    the first three may get set by PostgreSQL automatically, `PGPASS` must be 
+    environment variables `PGUSER`, `PGHOST`, `PGPORT`, and `PGPASSWORD` are set 
+    with the values matching the ones used during the PostgreSQL installation. While
+    the first three may get set by PostgreSQL automatically, `PGPASSWORD` must be 
     manually set as an environment variable, or added to a .env file. Note that 
     multiple threads can share the same `Engine`, but every process must have its 
     own `Engine`. 
@@ -102,7 +106,7 @@ def get_engine(echo: bool = False) -> Engine:
         A sqlalchemy `Engine`.
     """
     load_dotenv()
-    env_vars = ["PGUSER", "PGHOST", "PGPORT", "PGPASS"]
+    env_vars = ["PGUSER", "PGHOST", "PGPORT", "PGPASSWORD"]
     env = { var:os.getenv(var) for var in env_vars }
     for var, val in env.items():
         if val is None:
@@ -117,7 +121,7 @@ def get_engine(echo: bool = False) -> Engine:
     user = env["PGUSER"]
     host = env["PGHOST"]
     port = env["PGPORT"]
-    password = env["PGPASS"]
+    password = env["PGPASSWORD"]
     return create_engine(
         f"{db}+{db_api}://{user}:{password}@{host}:{port}/{db_name}", echo=echo
     )
@@ -155,14 +159,16 @@ def get_letterboxd_user_id(session: Session, username: str) -> int:
     return letterboxd_user_id
 
 
-def populate_ratings_table(session: Session, letterboxd_user_id: int, ratings: Ratings) -> None:
+def populate_ratings_table(
+    session: Session, letterboxd_user_id: int, scraped_ratings: list[ScrapedRating]
+) -> None:
     """
-    Assigns `letterboxd_user_id` to all the items in `ratings`, and inserts
+    Assigns `letterboxd_user_id` to all the items in `scraped_ratings`, and inserts
     the result into the table `ratings`.
     Args:
         `session`: A sqlalchemy `Session`.
         `letterboxd_user_id`: An `id` from the table `letterboxd_users`.
-        `ratings`: A sequence of `(original_title, release_year, rating)`.
+        `scraped_ratings`: A sequence of `(original_title, release_year, rating)`.
     """
     # The psycopg (DBAPI) cursor is used to insert `list[tuple]` instead of `list[dict]`
     cur = session.connection().connection.cursor()
@@ -170,7 +176,7 @@ def populate_ratings_table(session: Session, letterboxd_user_id: int, ratings: R
         INSERT INTO ratings (letterboxd_user_id, original_title, release_year, rating, imdb_id) 
         Values (%s, %s, %s, %s, NULL)"""
     )
-    ratings_with_ids = [(letterboxd_user_id, *rating) for rating in ratings]
+    ratings_with_ids = [(letterboxd_user_id, *rating) for rating in scraped_ratings]
     cur.executemany(populate_temp_ratings_table, ratings_with_ids)
     session.commit()
 
@@ -224,14 +230,14 @@ def get_features_and_ratings(session: Session, letterboxd_user_id: int) -> tuple
 
     # Split up the data and convert to numpy
     m = len(rows)
-    ratings_values = np.empty((m,))
+    ratings = np.empty((m,))
     feature_vectors = np.empty((m,), dtype=np.ndarray)
     for i, row in enumerate(rows):
         features, rating = row
         # `features` are already `np.ndarray`s
         feature_vectors[i] = features
-        ratings_values[i] = rating
-    return (feature_vectors, ratings_values)
+        ratings[i] = rating
+    return (feature_vectors, ratings)
 
 
 def get_k_nearest_neighbor_imdb_ids(session: Session, representative_features: np.ndarray) -> list[str]:
@@ -260,24 +266,26 @@ def get_k_nearest_neighbor_imdb_ids(session: Session, representative_features: n
     return imdb_ids
 
 
-def get_recommendation_imdb_ids(session: Session, letterboxd_user_id: int, ratings: Ratings) -> list[str]:
+def get_recommendation_imdb_ids(
+    session: Session, letterboxd_user_id: int, scraped_ratings: list[ScrapedRating]
+) -> list[str]:
     """
-    Retrieves `K` `imdb_id`s of movies recommended based on `ratings`.
+    Retrieves `K` `imdb_id`s of movies recommended based on `scraped_ratings`.
     Args:
         `session`: A sqlalchemy `Session`.
         `letterboxd_user_id`: An `id` from the table `letterboxd_users`.
-        `ratings`: A sequence of `(original_title, release_year, rating)`.
+        `scraped_ratings`: A sequence of `(original_title, release_year, rating)`.
     Returns:
         `K` `imdb_id`s
     Raises:
         `NoDataException`, if no feature vectors could be retrieved for the rated movies.
     """
-    with add_letterboxd_user_ratings(session, letterboxd_user_id, ratings):
-        feature_vectors, rating_values = get_features_and_ratings(session, letterboxd_user_id)
+    with add_letterboxd_user_ratings(session, letterboxd_user_id, scraped_ratings):
+        feature_vectors, ratings = get_features_and_ratings(session, letterboxd_user_id)
         if len(feature_vectors) == 0:
             raise NoDataException()
 
-        representative_index = find_representative_movie(feature_vectors, rating_values)
+        representative_index = find_representative_movie(feature_vectors, ratings)
 
         rep_features = feature_vectors[representative_index]
         recommendation_imdb_ids = get_k_nearest_neighbor_imdb_ids(session, rep_features)

@@ -1,11 +1,12 @@
 import random
 import string
 import unittest
+from unittest.mock import patch
 import datetime
 import numpy as np
-from sqlalchemy import and_, delete, insert, select, func
+from sqlalchemy import and_, delete, insert, select
 from sqlalchemy.orm import Session, sessionmaker
-from scrape_letterboxd import Ratings
+from scrape_letterboxd import ScrapedRating
 from reduce_features import N_COMPONENTS, normalize
 from db_models import K, LetterboxdUser, Movie, PreprocessedMovie, Rating, Recommendation
 from db import (
@@ -32,7 +33,7 @@ from db import (
 )
 
 engine = get_engine()
-ratings: Ratings = [
+scraped_ratings: list[ScrapedRating] = [
             ("Five Nights at Freddy's 2", 2025, 3.0),
             ("Avatar: Fire and Ash", 2025, 3.0),
             ("Marty Supreme", 2025, 4.0),
@@ -86,7 +87,7 @@ def get_from_ratings_table(session: Session, letterboxd_user_id: int) -> list[Ra
 class DBTests(unittest.TestCase):
     def tearDown(self):
         """
-        Resets the `ratings`, `recommendations` and `letterboxd_users` tables
+        Resets the tables `ratings`, `recommendations`, and `letterboxd_users`,
         after each test's execution.
         """
         with Session(engine) as session:
@@ -107,27 +108,24 @@ class DBTests(unittest.TestCase):
             self.assertEqual(letterboxd_user_id, get_letterboxd_user_id(session, username))
 
 
-    # TODO rename scraped ratings
     def test_populate_ratings_table(self):
         """
         Ensure no entries for `letterboxd_user_id` exist prior to table population,
-        and all the items in `ratings` were inserted into the table `ratings`.
+        and all the items in `scraped_ratings` are inserted into the table `ratings`.
         """
         with Session(engine) as session:
             letterboxd_user_id = get_letterboxd_user_id(session, get_random_string())
-            stored_ratings = get_from_ratings_table(session, letterboxd_user_id)
-            self.assertEqual(len(stored_ratings), 0)
+            ratings = get_from_ratings_table(session, letterboxd_user_id)
+            self.assertEqual(len(ratings), 0)
 
-            populate_ratings_table(session, letterboxd_user_id, ratings)
-            stored_ratings = get_from_ratings_table(session, letterboxd_user_id)
-        self.assertEqual(len(stored_ratings), len(ratings))
-        for stored_rating in stored_ratings:
-            self.assertEqual(stored_rating.letterboxd_user_id, letterboxd_user_id)
-            self.assertEqual(stored_rating.imdb_id, None)
-        stored_ratings = set(
-            (r.original_title, r.release_year, r.rating) for r in stored_ratings
-        )
-        self.assertEqual(len(stored_ratings - set(ratings)), 0)
+            populate_ratings_table(session, letterboxd_user_id, scraped_ratings)
+            ratings = get_from_ratings_table(session, letterboxd_user_id)
+        self.assertEqual(len(ratings), len(scraped_ratings))
+        for rating in ratings:
+            self.assertEqual(rating.letterboxd_user_id, letterboxd_user_id)
+            self.assertEqual(rating.imdb_id, None)
+        ratings = ((r.original_title, r.release_year, r.rating) for r in ratings)
+        self.assertEqual(len(set(ratings) - set(scraped_ratings)), 0)
 
 
     def test_fill_ratings_table_imdb_ids(self):
@@ -138,26 +136,24 @@ class DBTests(unittest.TestCase):
         """
         with Session(engine) as session:
             letterboxd_user_id = get_letterboxd_user_id(session, get_random_string())
-            populate_ratings_table(session, letterboxd_user_id, ratings)
+            populate_ratings_table(session, letterboxd_user_id, scraped_ratings)
             fill_ratings_table_imdb_ids(session, letterboxd_user_id)
-            stored_ratings = get_from_ratings_table(session, letterboxd_user_id)
-            self.assertEqual(len(stored_ratings), len(ratings))
-            for stored_rating in stored_ratings:
-                self.assertEqual(stored_rating.letterboxd_user_id, letterboxd_user_id)
+            ratings = get_from_ratings_table(session, letterboxd_user_id)
+            self.assertEqual(len(ratings), len(scraped_ratings))
+            for rating in ratings:
+                self.assertEqual(rating.letterboxd_user_id, letterboxd_user_id)
                 expected_imdb_id = session.scalar(
                     select(Movie.imdb_id)
                     .where(
                         and_(
-                            Movie.original_title == stored_rating.original_title,
-                            Movie.release_year == stored_rating.release_year
+                            Movie.original_title == rating.original_title,
+                            Movie.release_year == rating.release_year
                         )
                     )
                 )
-                self.assertEqual(stored_rating.imdb_id, expected_imdb_id)
-        stored_ratings = set(
-            (r.original_title, r.release_year, r.rating) for r in stored_ratings
-        )
-        self.assertEqual(len(stored_ratings - set(ratings)), 0)
+                self.assertEqual(rating.imdb_id, expected_imdb_id)
+        ratings = ((r.original_title, r.release_year, r.rating) for r in ratings)
+        self.assertEqual(len(set(ratings) - set(scraped_ratings)), 0)
 
 
     def test_add_letterboxd_user_ratings(self):
@@ -167,7 +163,7 @@ class DBTests(unittest.TestCase):
         with Session(engine) as session:
             letterboxd_user_id = get_letterboxd_user_id(session, get_random_string())
             before_ratings_count = len(get_from_ratings_table(session, letterboxd_user_id))
-            with add_letterboxd_user_ratings(session, letterboxd_user_id, ratings):
+            with add_letterboxd_user_ratings(session, letterboxd_user_id, scraped_ratings):
                 pass
             after_ratings_count = len(get_from_ratings_table(session, letterboxd_user_id))
             self.assertEqual(before_ratings_count, after_ratings_count)
@@ -247,39 +243,35 @@ class DBTests(unittest.TestCase):
         username = get_random_string()
         with Session(engine) as session:
             letterboxd_user_id = get_letterboxd_user_id(session, username)
-            with add_letterboxd_user_ratings(session, letterboxd_user_id, ratings):
-                stored_ratings = get_from_ratings_table(session, letterboxd_user_id)
-                imdb_ids = [
-                    r.imdb_id for r in stored_ratings 
+            with add_letterboxd_user_ratings(session, letterboxd_user_id, scraped_ratings):
+                ratings = get_from_ratings_table(session, letterboxd_user_id)
+                expected_values = [
+                    (r.imdb_id, r.rating) for r in ratings 
                     if r.imdb_id != None and r.rating != None
                 ]
-                expected_rating_values = [
-                    r.rating for r in stored_ratings 
-                    if r.imdb_id != None and r.rating != None
-                ]
-                expected_feature_vectors = session.scalars(
-                    select(PreprocessedMovie.features)
-                    .where(PreprocessedMovie.imdb_id.in_(imdb_ids))
-                ).all()
-                expected_feature_vectors_set = set(
-                    tuple(v) for v in expected_feature_vectors
-                )
+                expected_imdb_ids = [imdb_id for imdb_id, _ in expected_values]
+                expected_rating_values = [rating for _, rating in expected_values]
                 feature_vectors, rating_values = get_features_and_ratings(
                     session, letterboxd_user_id
                 )
-                feature_vectors_set = set(tuple(v) for v in feature_vectors)
+                expected_feature_vectors = session.scalars(
+                    select(PreprocessedMovie.features)
+                    .where(PreprocessedMovie.imdb_id.in_(expected_imdb_ids))
+                ).all()
                 self.assertEqual(len(rating_values), len(expected_rating_values))
                 self.assertEqual(len(feature_vectors), len(expected_feature_vectors))
                 self.assertEqual(len(rating_values), len(feature_vectors))
                 self.assertEqual(len(set(rating_values) - set(expected_rating_values)), 0)
-                self.assertEqual(len(feature_vectors_set - expected_feature_vectors_set), 0)
+                expected_feature_vectors = set(tuple(v) for v in expected_feature_vectors)
+                feature_vectors = set(tuple(v) for v in feature_vectors)
+                self.assertEqual(len(feature_vectors - expected_feature_vectors), 0)
         
 
     def test_get_k_nearest_neighbor_imdb_ids(self):
         """
-        Ensure that movies not picked as the nearest neighbors of a representative 
-        have similarities less than or equal to the lowest similarity of the 
-        nearest neighbors.
+        Ensure that non-nearest neighbors of a representative movie have cosine 
+        similarities less than or equal to the lowest cosine similarity of the nearest 
+        neighbors.
         """
         representative_features = np.empty((N_COMPONENTS,))
         random_gen = random.Random()
@@ -298,8 +290,7 @@ class DBTests(unittest.TestCase):
             ).all()
             assert len(nearest_neighbor_features) == K
             min_nearest_neighbor_similarity = np.dot(
-                nearest_neighbor_features[K - 1], 
-                normalized_rep_features
+                nearest_neighbor_features[K - 1], normalized_rep_features
             )
             closest_non_nearest_neighbor_features = session.scalars(
                 select(PreprocessedMovie.features)
@@ -311,17 +302,29 @@ class DBTests(unittest.TestCase):
             ).all()
             assert len(closest_non_nearest_neighbor_features) == 1
             max_non_nearest_neighbor_similarity = np.dot(
-                closest_non_nearest_neighbor_features[0],
-                normalized_rep_features
+                closest_non_nearest_neighbor_features[0], normalized_rep_features
             )
             self.assertGreaterEqual(
                 min_nearest_neighbor_similarity, max_non_nearest_neighbor_similarity
             )
             
 
+    @patch("db.get_features_and_ratings")
+    def test_get_recommendation_imdb_ids(self, mock_get_features_and_ratings):
+        """
+        Ensure `NoDataException` is raised when no feature vectors could be 
+        retrieved for a non-zero amount of rated movies. 
+        """
+        with Session(engine) as session:
+            letterboxd_user_id = get_letterboxd_user_id(session, get_random_string())
+            mock_get_features_and_ratings.return_value = ([], [])
+            with self.assertRaises(NoDataException):
+                get_recommendation_imdb_ids(session, letterboxd_user_id, scraped_ratings)
+
+
     def test_extract_imdb_ids_from_recommendation(self):
         """
-        Ensure all the `imdb_id`s of a `Recommendation` are correctly extracted.
+        Ensure all the `imdb_id`s of a `Recommendation` are extracted.
         """
         with Session(engine) as session:
             imdb_id_kwargs = get_imdb_id_kwargs(session)
@@ -340,7 +343,7 @@ class DBTests(unittest.TestCase):
         with Session(engine) as session:
             letterboxd_user_id = get_letterboxd_user_id(session, get_random_string())
             imdb_ids = get_k_imdb_ids(session)
-            cache_recommendation(session, letterboxd_user_id, len(ratings), imdb_ids)
+            cache_recommendation(session, letterboxd_user_id, len(scraped_ratings), imdb_ids)
             recommendation = get_cached_recommendation(session, letterboxd_user_id)
             self.assertIsNotNone(recommendation)
             if recommendation is not None:
@@ -351,7 +354,7 @@ class DBTests(unittest.TestCase):
 
     def test_get_movies(self):
         """
-        Ensure all movies corresponding to a list of `imdb_id`s could be retrieved.
+        Ensure all movies corresponding to a list of `imdb_id`s are retrieved.
         """
         with Session(engine) as session:
             imdb_ids = get_k_imdb_ids(session)
@@ -362,6 +365,9 @@ class DBTests(unittest.TestCase):
 
 
     def test_cache_trailer_ids(self):
+        """
+        Ensure that `trailer_id`s are correctly cached.
+        """
         trailer_ids = [
             "spongebob", "patrick", "squidward", "mr.krabs", "sandy", 
             "plankton", "doodlebob", "larry", "jellyfish", "krabbypatty"
