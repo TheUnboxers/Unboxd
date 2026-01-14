@@ -1,5 +1,6 @@
 import os
 import datetime
+from typing import Sequence
 from sqlalchemy import (
     Engine,
     and_,
@@ -37,6 +38,11 @@ else:
     from .scrape_letterboxd import Ratings
     from .representative import find_representative_movie
        
+
+# Feel free to adjust these values if they are too easygoing or harsh
+BASE_RECOMMENDATION_TTL_HRS = 0.5
+RECOMMENDATION_TTL_HRS_PER_100_RATINGS = 1
+
 
 class NoDataException(Exception):
     """
@@ -128,7 +134,7 @@ def get_letterboxd_user_id(session: Session, username: str) -> int:
     Returns:
         A `letterboxd_user_id` usable in `recommendations` and `ratings`.
     Raises:
-        `UserInsertionException`, but this is extremely unlikely.
+        `UserInsertionException`, if a user could not be inserted into the DB.
     """
     letterboxd_user_id = session.scalar(
             select(LetterboxdUser.id)
@@ -228,7 +234,7 @@ def get_features_and_ratings(session: Session, letterboxd_user_id: int) -> tuple
     return (feature_vectors, ratings_values)
 
 
-def get_k_nearest_neighbor_imdb_ids(session: Session, representative_features: list[float]) -> list[str]:
+def get_k_nearest_neighbor_imdb_ids(session: Session, representative_features: np.ndarray) -> list[str]:
     """
     Retrieves `K` `imdb_id`s of the movies yielding the largest dot (inner) products with the
     feature vector `representative_features`. Assuming all vectors are normalized, this is
@@ -264,7 +270,7 @@ def get_recommendation_imdb_ids(session: Session, letterboxd_user_id: int, ratin
     Returns:
         `K` `imdb_id`s
     Raises:
-        `NoDataException` 
+        `NoDataException`, if no feature vectors could be retrieved for the rated movies.
     """
     with add_letterboxd_user_ratings(session, letterboxd_user_id, ratings):
         feature_vectors, rating_values = get_features_and_ratings(session, letterboxd_user_id)
@@ -287,15 +293,11 @@ def get_expiration_timestamp(num_ratings: int) -> datetime.datetime:
     Returns:
         An expiration timestamp for a `Recommendation`.
     """
-    # Feel free to adjust these values if they are too easygoing or harsh
-    base_recommendation_ttl_hrs = 0.5
-    recommendation_ttl_hrs_per_100_ratings = 1
-
     current_timestamp = datetime.datetime.now()
     expiration_timestamp = current_timestamp + datetime.timedelta(
         hours=
-        base_recommendation_ttl_hrs
-        + (recommendation_ttl_hrs_per_100_ratings * (num_ratings / 100))
+        BASE_RECOMMENDATION_TTL_HRS
+        + (RECOMMENDATION_TTL_HRS_PER_100_RATINGS * (num_ratings // 100))
     )
     return expiration_timestamp
 
@@ -376,14 +378,16 @@ def get_movies(session: Session, imdb_ids: list[str]) -> list[Movie]:
     return list(cur.all())
 
 
-def cache_trailer_ids(session: Session, imdb_ids: list[str], trailer_ids: list[str]) -> None:
+def cache_trailer_ids(
+    session: Session, imdb_ids: list[str], trailer_ids: Sequence[str | None]
+) -> None:
     """
     Updates the `trailer_id` of entries from the table `movies` having an `imdb_id` in
     `imdb_ids`, using the values in `trailer_ids`.
     Args:
         `session`: A sqlalchemy `Session`.
-        `imdb_ids`: The `imdb_id`s of entries in `movies` with `NULL` `trailer_id`s. 
-        `trailer_ids`: The YouTube trailer ids of the movies corresponding to `imdb_ids`.
+        `imdb_ids`: The `imdb_id`s of movies without `trailer_id`s.
+        `trailer_ids`: The YouTube trailer ids of the movies having `imdb_ids`.
     """
     # The psycopg (DBAPI) cursor is used to insert `list[tuple]` instead of `list[dict]`
     cur = session.connection().connection.cursor()

@@ -188,8 +188,8 @@ def recommendation_system(username: str) -> None:
 @app.post("/usernames/", status_code=HTTPStatus.ACCEPTED)
 def init_system(request: UsernameRequest, background_tasks: BackgroundTasks):
     is_system_in_progress = (
-        request.username in status \
-        and status[request.username] not in failed \
+        request.username in status
+        and status[request.username] not in failed
         and status[request.username] != Status.FINISHED
     )
     if is_system_in_progress:
