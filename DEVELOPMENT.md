@@ -1,5 +1,10 @@
 ## Backend Development 
 
+### Running tests
+
+- Ensure you are in the project's root directory `Unboxd`
+- Run the tests: `uv run -m pytest`
+
 ### Creating Datasets
 
 - Download the following datasets from Kaggle, and move them to `data`:
