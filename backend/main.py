@@ -74,7 +74,7 @@ async def lifespan(app: FastAPI):
     Handles application startup and shutdown tasks.
     """
     # Uncomment to reset the recommendations cache before server startup
-    delete_recommendations(Session)
+    # delete_recommendations(Session)
     scheduler.start()
     yield
     scheduler.shutdown()
