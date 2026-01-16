@@ -143,11 +143,11 @@ def recommendation_system(username: str) -> None:
     Completes the movie recommendation system for `username`, and updates `status` 
     along the way to reflect the progress of the system.
     """
-    # status[username] = Status.VALIDATING_USERNAME
-    # profile_response = requests.get(f"https://www.letterboxd.com/{username}/")
-    # if profile_response.status_code != HTTPStatus.OK:
-    #     status[username] = Status.FAILED_INVALID_USERNAME
-    #     return
+    status[username] = Status.VALIDATING_USERNAME
+    profile_response = requests.get(f"https://www.letterboxd.com/{username}/")
+    if profile_response.status_code != HTTPStatus.OK:
+        status[username] = Status.FAILED_INVALID_USERNAME
+        return
 
     status[username] = Status.WAITING_FOR_LETTERBOXD_SCRAPER
 
