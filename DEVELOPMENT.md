@@ -9,9 +9,7 @@ uv run -m pytest
 
 ### Creating Datasets
 
-```cmd
-cd helpers
-```
+- Ensure you are in `Unboxd/backend/helpers`, or `Unboxd\backend\helpers`
 
 1. Initialize the movies dataset, and save the result in `movies`: 
 ```cmd
@@ -38,9 +36,7 @@ uv run reduce_features.py
 
 ### Scraping Letterboxd
 
-```cmd
-cd helpers
-```
+- Ensure you are in `Unboxd/backend/helpers`, or `Unboxd\backend\helpers`
 
 - Select a Letterboxd user's `username` to use 
 
