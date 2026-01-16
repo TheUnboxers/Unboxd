@@ -44,7 +44,7 @@ def reduce_features_and_normalize(df: pd.DataFrame, n_components: int | None) ->
 
     plot_results = False
     if n_components is None:
-        n_components = len(df)
+        n_components = len(df.columns)
         plot_results = True
 
     # Ignore warning about sparse data being converted to dense 
@@ -52,10 +52,11 @@ def reduce_features_and_normalize(df: pd.DataFrame, n_components: int | None) ->
     feature_reducer = TruncatedSVD(n_components)
     reduced_data = feature_reducer.fit_transform(df)
 
+    df = pd.DataFrame(saved_col_values, columns=saved_cols)
+
     if plot_results:
         plot_explained_variance_ratios(feature_reducer)
-
-    df = pd.DataFrame(saved_col_values, columns=saved_cols)
+        return df
 
     print("Creating and normalizing features vectors...")
     reduced_data_rows = [
