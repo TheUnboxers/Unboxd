@@ -22,7 +22,8 @@ uv run init_dataset.py
 ```cmd
 uv run preprocess_features.py
 ```
-> [!TIP] This can be skipped if saving the `preprocessed_movies` dataset is not necessary.
+> [!TIP] 
+> This can be skipped if saving the `preprocessed_movies` dataset is not necessary.
 
 3. Reduce the features of the movies dataset, and possibly save the result 
 in `reduced_preprocessed_movies`:
@@ -30,10 +31,10 @@ in `reduced_preprocessed_movies`:
 uv run reduce_features.py 
 ```
 > To skip step (2), pass the argument `preprocess` to preprocess the `movies` dataset,
-but not save it, and use it for feature reduction. The argument `plot` can be 
-used, with or without `preprocess`, to visualize the variance explained by the different 
-numbers of components resulting from reducing the features of the `preprocessed_movies` 
-dataset. If `plot` is passed, `reduced_preprocessed_movies` will not be saved.
+> but not save it, and use it for feature reduction. The argument `plot` can be 
+> used, with or without `preprocess`, to visualize the variance explained by the different 
+> numbers of components resulting from reducing the features of the `preprocessed_movies` 
+> dataset. If `plot` is passed, `reduced_preprocessed_movies` will not be saved.
 
 ### Scraping Letterboxd
 
@@ -49,7 +50,7 @@ running `scrape_letterboxd.py`. For example:
 uv run scrape_letterboxd.py username pfp ratings
 ```
 > This scrapes ratings and saves them at `../data/ratings/username.csv` or 
-`..\data\ratings\username.csv`, and prints the url of the user's pfp to `STDOUT`
+> `..\data\ratings\username.csv`, and prints the url of the user's pfp to `STDOUT`
 
 ## Frontend Development
 

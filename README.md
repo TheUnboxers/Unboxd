@@ -8,7 +8,7 @@ You can download the recommended movies list and import it to your Letterboxd wa
 ## Setup
 
 > [!NOTE] 
-For further development setup see [DEVELOPMENT.md](./DEVELOPMENT.md)
+> For further development setup see [DEVELOPMENT.md](./DEVELOPMENT.md)
 
 ### Backend 
 
@@ -59,9 +59,9 @@ PGUSER=postgres
 PGHOST=localhost
 PGPORT=5432
 ```
-> [NOTE!]
-These are example values, but it is likely that you will use these. Also, these variables 
-may already be set by PostgreSQL during installation.
+> [!NOTE]
+> These are example values, but it is likely that you will use these. Also, these variables 
+> may already be set by PostgreSQL during installation.
 
 ```
 PGPASSWORD=<insert_password_used_to_setup_posgres_here>
@@ -79,8 +79,8 @@ cd helpers
 uv run init_db.py 
 ```
 > If they don't already exist, this will initialize the `trimmed_movies` and 
-`reduced_preprocessed_movies` datasets in `data`. The datasets can be deleted, 
-but re-initializing the DB is much quicker with the datasets already created.
+> `reduced_preprocessed_movies` datasets in `data`. The datasets can be deleted, 
+> but re-initializing the DB is much quicker with the datasets already created.
 
 ```sh
 cd ..
