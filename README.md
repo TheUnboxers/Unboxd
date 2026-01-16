@@ -53,7 +53,7 @@ a PostgreSQL extension that enables vector operations in DB queries.
 #### Environment 
 
 - Ensure the following environment variables are set using the same values used
-during the PostgreSQL installation. These can be set in a `.env` file:
+during the PostgreSQL installation. These can alternatively be set in a `.env` file:
 ```
 PGUSER=postgres
 PGHOST=localhost

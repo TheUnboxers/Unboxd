@@ -331,7 +331,6 @@ def cache_recommendation(
         `num_ratings`: The number of ratings scraped from `username`'s account.
         `recommendation_imdb_ids`: The `imdb_id`s of the `Recommendation`.
     """
-    assert len(recommendation_imdb_ids) == K
     data_without_id = dict()
     data_without_id["expiration_timestamp"] = get_expiration_timestamp(num_ratings),
     for i, imdb_id in enumerate(recommendation_imdb_ids):

@@ -1,5 +1,12 @@
 ## Backend Development 
 
+### Running tests
+
+- Ensure you are in the project's root directory: `Unboxd`
+```cmd
+uv run -m pytest
+```
+
 ### Creating Datasets
 
 ```cmd
@@ -61,6 +68,10 @@ uv run scrape_letterboxd.py username pfp ratings
     - `reduced_preprocessed_movies` splits containing dimensionality reduced, and normalized
     feature vectors of the movies dataset
     - `ratings` scraped Letterboxd user ratings
+  - `tests` all tests
+    - `test_recommendation_system.py` verifies the values assigned to `status` by the 
+    recommendation system
+    - `test_db.py` tests operations on the db
   - `helpers` helper methods
     - `models.py` type modelling for the FastAPI server
     - `paths.py` enumerates the paths of the contents of `data`
@@ -73,7 +84,6 @@ uv run scrape_letterboxd.py username pfp ratings
     - `db_models.py` type modelling for the DB
     - `init_db.py` initializes the DB
     - `db.py` provides methods for using the DB and the recommendation system
-    - `db_tests.py` tests for the DB
     - `scrape_letterboxd.py` provides methods for scraping Letterboxd user data 
     - `scrape_trailer_ids.py` provides method for scraping YouTube trailer video ids
     - `test.py` (needs updating) tests the recommendation system on mock data 

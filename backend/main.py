@@ -8,26 +8,49 @@ from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import sessionmaker
 from apscheduler.schedulers.background import BackgroundScheduler 
-from helpers.scrape_letterboxd import scrape_ratings, scrape_pfp_url
-from helpers.scrape_trailer_ids import scrape_trailer_ids
-from helpers.models import ProperlyFormedLetterboxdUsername, UsernameRequest, Status, Movie
-from helpers.db_models import Movie as DBMovie
-from helpers.db import (
-        NoDataException,
-        UserInsertionException,
-        get_engine, 
-        get_letterboxd_user_id,
-        get_cached_recommendation,
-        extract_imdb_ids_from_recommendation,
-        has_expired,
-        get_recommendation_imdb_ids, 
-        cache_recommendation,
-        delete_expired_recommendations,
-        delete_recommendations,
-        get_movies,
-        cache_trailer_ids,
-        )
-from helpers.test import dummy_data
+
+if __name__ == "__main__":
+    from helpers.scrape_letterboxd import scrape_ratings, scrape_pfp_url
+    from helpers.scrape_trailer_ids import scrape_trailer_ids
+    from helpers.models import ProperlyFormedLetterboxdUsername, UsernameRequest, Status, Movie
+    from helpers.db_models import Movie as DBMovie
+    from helpers.db import (
+            NoDataException,
+            UserInsertionException,
+            get_engine, 
+            get_letterboxd_user_id,
+            get_cached_recommendation,
+            extract_imdb_ids_from_recommendation,
+            has_expired,
+            get_recommendation_imdb_ids, 
+            cache_recommendation,
+            delete_expired_recommendations,
+            delete_recommendations,
+            get_movies,
+            cache_trailer_ids,
+            )
+    from helpers.test import dummy_data
+else:
+    from .helpers.scrape_letterboxd import scrape_ratings, scrape_pfp_url
+    from .helpers.scrape_trailer_ids import scrape_trailer_ids
+    from .helpers.models import ProperlyFormedLetterboxdUsername, UsernameRequest, Status, Movie
+    from .helpers.db_models import Movie as DBMovie
+    from .helpers.db import (
+            NoDataException,
+            UserInsertionException,
+            get_engine, 
+            get_letterboxd_user_id,
+            get_cached_recommendation,
+            extract_imdb_ids_from_recommendation,
+            has_expired,
+            get_recommendation_imdb_ids, 
+            cache_recommendation,
+            delete_expired_recommendations,
+            delete_recommendations,
+            get_movies,
+            cache_trailer_ids,
+            )
+    from .helpers.test import dummy_data
 
 
 Session = sessionmaker(get_engine())
@@ -51,7 +74,7 @@ async def lifespan(app: FastAPI):
     Handles application startup and shutdown tasks.
     """
     # Uncomment to reset the recommendations cache before server startup
-    # delete_recommendations(Session)
+    delete_recommendations(Session)
     scheduler.start()
     yield
     scheduler.shutdown()
@@ -118,15 +141,13 @@ def convert_movies(movies: list[DBMovie]) -> list[Movie]:
 def recommendation_system(username: str) -> None:
     """
     Completes the movie recommendation system for `username`, and updates `status` 
-    along the way.
+    along the way to reflect the progress of the system.
     """
-    status[username] = Status.VALIDATING_USERNAME
-    try:
-        profile_response = requests.get(f"https://www.letterboxd.com/{username}/")
-        profile_response.raise_for_status()
-    except requests.exceptions.RequestException:
-        status[username] = Status.FAILED_INVALID_USERNAME
-        return
+    # status[username] = Status.VALIDATING_USERNAME
+    # profile_response = requests.get(f"https://www.letterboxd.com/{username}/")
+    # if profile_response.status_code != HTTPStatus.OK:
+    #     status[username] = Status.FAILED_INVALID_USERNAME
+    #     return
 
     status[username] = Status.WAITING_FOR_LETTERBOXD_SCRAPER
 

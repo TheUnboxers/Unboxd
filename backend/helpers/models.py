@@ -12,7 +12,7 @@ LETTERBOXD_USERNAME_VALID_CHARS = r"[a-zA-Z0-9_]"
 ProperlyFormedLetterboxdUsername = Query(
         min_length=LETTERBOXD_USERNAME_MIN_LENGTH, 
         max_length=LETTERBOXD_USERNAME_MAX_LENGTH, 
-        regex=LETTERBOXD_USERNAME_VALID_CHARS
+        pattern=LETTERBOXD_USERNAME_VALID_CHARS
         )
 
 
