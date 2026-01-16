@@ -29,8 +29,8 @@ to this value, the database should be reinitialized after recreating the
 def reduce_features_and_normalize(df: pd.DataFrame, n_components: int | None) -> pd.DataFrame:
     """
     Performs feature reduction and normalization on the preprocessed movies dataset, `df`,
-    an and plots the results of all possible value of `n_components` if `n_components` 
-    is not specified.
+    and plots the results of all possible value of `n_components` if `n_components` is 
+    not specified.
     Args:
         `df`: The preprocessed movies dataset.
         `n_components`: The number of components to reduce down to.

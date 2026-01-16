@@ -25,7 +25,7 @@ def find_representative_movie(movies: np.ndarray, weights: np.ndarray) -> int:
                 weighted_dot_product = dot_product * weights[j]
                 total_dot_product += weighted_dot_product 
 
-        # Update the representative movie if the current one has a higher total similarity
+        # Update the representative movie if the current one has a higher total dot product
         if total_dot_product > max_total_dot_product:
             max_total_dot_product = total_dot_product
             representative_index = i
