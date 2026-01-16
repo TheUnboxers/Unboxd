@@ -1,98 +1,99 @@
-import numpy as np
-import pandas as pd
-from unittest.mock import patch
-from backend.main import recommendation_system, status, recommendations
-from backend.helpers.models import Status, Movie
+from unittest.mock import patch, Mock
+from backend.main import recommendation_system, status
+from backend.helpers.models import Status
+from backend.helpers.db_models import Movie
+
 
 # reset global state
 def teardown_function():
     status.clear()
-    recommendations.clear()
+
 
 @patch("backend.main.requests.get")
 @patch("backend.main.scrape_ratings")
-@patch("backend.main.obtain_ids_and_weights")
-@patch("backend.main.retrieve_preprocessed_data")
-@patch("backend.main.recommend_movies")
+@patch("backend.main.get_letterboxd_user_id")
+@patch("backend.main.get_recommendation_imdb_ids")
+@patch("backend.main.cache_recommendation")
 @patch("backend.main.get_movies")
+@patch("backend.main.scrape_trailer_ids")
+@patch("backend.main.cache_trailer_ids")
 def test_recommendation_system_success(
-    mock_get_movies,
-    mock_recommend,
-    mock_retrieve_preprocessed,
-    mock_obtain_ids,
-    mock_scrape,
-    mock_requests,
+    mock_cache_trailer_ids: Mock,
+    mock_scrape_trailer_ids: Mock,
+    mock_get_movies: Mock,
+    mock_cache_rec: Mock,
+    mock_get_rec_imdb_ids: Mock,
+    mock_get_id: Mock,
+    mock_scrape_ratings: Mock,
+    mock_requests: Mock,
 ):
-    username = "testuser"
-
     # Mock
+    username = "testuser"
     mock_requests.return_value.status_code = 200
-    mock_scrape.return_value = {"tt1": 4.5}
-    mock_obtain_ids.return_value = (["tt1"], np.array([1.0]))
-    mock_retrieve_preprocessed.return_value = pd.DataFrame({
-        "imdb_id": ["tt1"],
-        "feature1": [0.1],
-        "feature2": [0.2]
-    })
-    mock_recommend.return_value = {"t9": 0.9}
+    mock_scrape_ratings.return_value = [("Barbie", 2023, 4.5)]
+    mock_get_id.return_value = 21
+    mock_get_rec_imdb_ids.return_value = ["tt1"]
+    mock_cache_rec.return_value = None
     mock_get_movies.return_value = [
         Movie(
-            movieId="t9",
-            name="Recommended Movie",
-            year=2023,
-            genre=["Drama"],
-            description="A great movie.",
-            posterURL="poster_url",
-            letterboxdURL="letterboxd_url",
-            trailerID="tt9",
-            similarityScore=0.9
+            imdb_id="tt1",
+            original_title="Recommended Movie",
+            release_year=2023,
+            trailer_id="abcd",
+            genres=["Drama"],
+            poster_url="poster_url",
+            plot="A great movie.",
         )
     ]
+    mock_scrape_trailer_ids.return_value = None
+    mock_cache_trailer_ids.return_value = None
     recommendation_system(username)
 
     assert status[username] == Status.FINISHED
-    assert username in recommendations
-    assert len(recommendations[username]) == 1
+
 
 @patch("backend.main.requests.get")
-def test_invalid_username(mock_requests):
+def test_invalid_username(mock_requests: Mock):
     '''testing invalid username handling'''
     # Mock
+    username = "baduser"
     mock_requests.return_value.status_code = 404
+    recommendation_system(username)
 
-    recommendation_system("baduser")
+    assert status[username] == Status.FAILED_INVALID_USERNAME
 
-    assert status["baduser"] == Status.FAILED_INVALID_USERNAME
 
 @patch("backend.main.requests.get")
 @patch("backend.main.scrape_ratings")
-def test_no_ratings(mock_scrape, mock_requests):
+def test_no_ratings(mock_scrape_ratings: Mock, mock_requests: Mock):
     '''testing no ratings handling'''
     # Mock
+    username = "norating"
     mock_requests.return_value.status_code = 200
-    mock_scrape.return_value = {}
-    recommendation_system("norating")
-    assert status["norating"] == Status.FAILED_NO_RATINGS
+    mock_scrape_ratings.return_value = []
+    recommendation_system(username)
+
+    assert status[username] == Status.FAILED_NO_RATINGS
+
 
 @patch("backend.main.requests.get")
 @patch("backend.main.scrape_ratings")
-@patch("backend.main.obtain_ids_and_weights")
-@patch("backend.main.retrieve_preprocessed_data")
-@patch("backend.main.recommend_movies")
+@patch("backend.main.get_letterboxd_user_id")
+@patch("backend.main.get_recommendation_imdb_ids")
 def test_no_recommendations(
-    mock_recommend,
-    mock_retrieve_preprocessed,
-    mock_obtain_ids,
-    mock_scrape,
-    mock_requests,
+    mock_get_rec_imdb_ids: Mock,
+    mock_get_id: Mock,
+    mock_scrape_ratings: Mock,
+    mock_requests: Mock,
 ):
     '''testing no recommendations handling'''
     # Mock
+    username = "empty"
     mock_requests.return_value.status_code = 200
-    mock_scrape.return_value = {"t1": 4.5}
-    mock_obtain_ids.return_value = (["t1"], np.array([1.0]))
-    mock_retrieve_preprocessed.return_value = pd.DataFrame({"imdb_id": ["t1"], "feature1": [0.1]})
-    mock_recommend.return_value = {}
+    mock_scrape_ratings.return_value = [("Barbie", 2023, 4.5)]
+    mock_get_id.return_value = 21
+    mock_get_rec_imdb_ids.return_value = []
+    recommendation_system(username)
 
-    recommendation_system("empty")
-    assert status["empty"] == Status.FAILED_NO_RECOMMENDATIONS
+    assert status[username] == Status.FAILED_NO_RECOMMENDATIONS
+

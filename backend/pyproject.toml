@@ -14,4 +14,11 @@ dependencies = [
     "scikit-learn>=1.7.2",
     "tqdm>=4.67.1",
     "uvicorn>=0.38.0",
+    "matplotlib>=3.10.8",
+    "sqlalchemy>=2.0.45",
+    "lxml>=6.0.2",
+    "dotenv>=0.9.9",
+    "psycopg>=3.3.2",
+    "pgvector>=0.4.2",
+    "apscheduler>=3.11.2",
 ]

@@ -2,65 +2,88 @@
 
 ### Running tests
 
-- Ensure you are in the project's root directory `Unboxd`
-- Run the tests: `uv run -m pytest`
+- Ensure you are in the project's root directory: `Unboxd`
+```cmd
+uv run -m pytest
+```
 
 ### Creating Datasets
 
-- Download the following datasets from Kaggle, and move them to `data`:
-    - The inner `movie_dataset` of [(international) movies dataset](https://www.kaggle.com/datasets/pavan4kalyan/imdb-dataset-of-600k-international-movies)
-    - [Trending movies dataset](https://www.kaggle.com/datasets/amitksingh2103/trending-movies-over-the-years) 
-- `cd helpers`
-- Initialize the movies dataset and merged trending movies dataset: `uv run initialize_datasets.py`
-- Preprocess the movies dataset: `uv run preprocess_features.py`
-- Split the preprocessed movies dataset: `uv run split_csv.py`
-- Retrieve the preprocessed features of the trending movies dataset: `uv run retrieve_preprocessed.py`
-- **(Optional, Very slow ~ 6 hrs)** Scrape movie trailer YouTube video ids for the merged trending movies dataset: `uv run scrape_trailer_ids.py`
+- Ensure you are in `Unboxd/backend/helpers`, or `Unboxd\backend\helpers`
 
-### Scraping and Merging of Letterboxd Data
+1. Initialize the movies dataset, and save the result in `movies`: 
+```cmd
+uv run init_dataset.py
+```
 
-- If not done already: `cd helpers`
+2. Preprocess the movies dataset, and save the result in `preprocessed_movies`: 
+```cmd
+uv run preprocess_features.py
+```
+> [!TIP] 
+> This can be skipped if saving the `preprocessed_movies` dataset is not necessary.
+
+3. Reduce the features of the movies dataset, and possibly save the result 
+in `reduced_preprocessed_movies`:
+```cmd 
+uv run reduce_features.py 
+```
+> To skip step (2), pass the argument `preprocess` to preprocess the `movies` dataset,
+> but not save it, and use it for feature reduction. The argument `plot` can be 
+> used, with or without `preprocess`, to visualize the variance explained by the different 
+> numbers of components resulting from reducing the features of the `preprocessed_movies` 
+> dataset. If `plot` is passed, `reduced_preprocessed_movies` will not be saved.
+
+### Scraping Letterboxd
+
+- Ensure you are in `Unboxd/backend/helpers`, or `Unboxd\backend\helpers`
+
 - Select a Letterboxd user's `username` to use 
 
-#### Scraping Letterboxd
-
-- Out of `ratings`, and `pfp`, pass the desired item names after `username` when running `scrape_letterboxd.py`
-- For example, `uv run scrape_letterboxd.py username pfp ratings`:
-    - Scrapes ratings and saves them at `../data/ratings/username.csv` or `..\data\ratings\username.csv`
-    - Prints the url of the user's pfp
-
-#### Merging
-
-- To merge movie data with the scraped ratings from the previous step: `uv run merge_ratings.py username`
-- Find the results at `../data/merged_ratings/username.csv` or `..\data\merged_ratings\username.csv` 
+- Out of `ratings`, and `pfp`, pass the desired item names after `username` when 
+running `scrape_letterboxd.py`. For example:
+```cmd
+uv run scrape_letterboxd.py username pfp ratings
+```
+> This scrapes ratings and saves them at `../data/ratings/username.csv` or 
+> `..\data\ratings\username.csv`, and prints the url of the user's pfp to `STDOUT`
 
 ## Frontend Development
+
 - When changing backend model types, to ensure changes are imported to the frontend, run `uv run main.py` in `backend` and run `npm run openapi-ts` in `frontend` to run HeyAPI.
 
 ## File architecture
+
 `root`
 - `backend` backend folder
   - `main.py` fastapi server 
-  - `data` all datasheets
-    - `movies.csv` (international) movies dataset
+  - `data` all datasheets (these won't exist unless they get initialized)
+    - `movie_dataset` splits of the international movies dataset used to create `movies`
+    - `movies` splits of the movies dataset
+    - `trimmed_movies` splits of the movies dataset with the columns needed by the DB
     - `preprocessed_movies` preprocessed splits of the movies dataset
-    - `merged_trending_movies.csv` trending movies with features from the movies dataset
-    - `preprocessed_trending_movies.csv` trending movies with features from the preprocessed movies dataset
-    - `trending_movie_trailers.csv` movie trailer YouTube video ids of the merged trending movies dataset
+    - `reduced_preprocessed_movies` splits containing dimensionality reduced, and normalized
+    feature vectors of the movies dataset
     - `ratings` scraped Letterboxd user ratings
-    - `merged_ratings` scraped Letterboxd user ratings combined with movie data from the movies dataset
+  - `tests` all tests
+    - `test_recommendation_system.py` verifies the values assigned to `status` by the 
+    recommendation system
+    - `test_db.py` tests operations on the db
   - `helpers` helper methods
-    - `models.py` type modelling
+    - `models.py` type modelling for the FastAPI server
     - `paths.py` enumerates the paths of the contents of `data`
-    - `initialize_datasets.py` initializes the movies dataset and the merged trending movies dataset
-    - `scrape_letterboxd.py` provides method for scraping Letterboxd user data 
-    - `scrape_trailer_ids.py` scrapes YouTube for merged trending movie trailer ids
-    - `merge_ratings.py` provides methods for merging the movies dataset with scraped Letterboxd user ratings 
-    - `recommender.py` provides cosine similarity and knn recommender methods
-    - `preprocess_features.py` preprocesses the movies dataset
-    - `split_csv.py` splits the preprocessed movies dataset into multiple files
-    - `retrieve_preprocessed.py` provides methods for retrieving the preprocessed versions of movie data
-    - `test.py` tests the recommendation system on mock data
+    - `init_dataset.py` initializes the movies dataset
+    - `preprocess_features.py` provides a method for preprocessesing the movies dataset
+    - `reduce_features.py` provides a method for visualizing feature reduction, and methods for 
+    reducing the dimensionality, and normalizing the feature vectors of the preprocessed 
+    movies dataset
+    - `representative.py` provides method for computing a user's representative movie
+    - `db_models.py` type modelling for the DB
+    - `init_db.py` initializes the DB
+    - `db.py` provides methods for using the DB and the recommendation system
+    - `scrape_letterboxd.py` provides methods for scraping Letterboxd user data 
+    - `scrape_trailer_ids.py` provides method for scraping YouTube trailer video ids
+    - `test.py` (needs updating) tests the recommendation system on mock data 
 - `frontend` frontend folder
   - `app`
     - `api`

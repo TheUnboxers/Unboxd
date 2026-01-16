@@ -1,10 +1,6 @@
 .vscode/
 **/.venv/
+**/.env
 **/__pycache__/
 **/.DS_Store
-backend/data/movies.csv
-backend/data/trending_movies.csv
-backend/data/movie_dataset
-backend/data/preprocessed_movies.csv
-backend/data/ratings
-backend/data/merged_ratings
+backend/data/*

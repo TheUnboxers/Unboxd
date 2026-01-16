@@ -29,7 +29,7 @@ export type Movie = {
     /**
      * Year
      */
-    year: number;
+    year: string;
     /**
      * Genre
      */
@@ -37,11 +37,11 @@ export type Movie = {
     /**
      * Description
      */
-    description: string;
+    description: string | null;
     /**
      * Posterurl
      */
-    posterURL: string;
+    posterURL: string | null;
     /**
      * Letterboxdurl
      */
@@ -49,11 +49,7 @@ export type Movie = {
     /**
      * Trailerid
      */
-    trailerID: string;
-    /**
-     * Similarityscore
-     */
-    similarityScore: number;
+    trailerID: string | null;
 };
 
 /**
@@ -63,14 +59,17 @@ export enum Status {
     STARTING = 'Starting',
     VALIDATING_USERNAME = 'Validating username',
     FAILED_INVALID_USERNAME = 'Failed. Invalid username',
-    WAITING_FOR_SCRAPER = 'Waiting for scraper',
+    WAITING_FOR_LETTERBOXD_SCRAPER = 'Waiting for Letterboxd scraper',
     SCRAPING_USER_RATINGS = 'Scraping user ratings',
     FAILED_NO_RATINGS_TO_SCRAPE_FOR_THE_USER = 'Failed. No ratings to scrape for the user',
     FAILED_ERROR_WHILE_SCRAPING = 'Failed. Error while scraping',
     PREPROCESSING_DATA = 'Preprocessing data',
     FAILED_NO_DATA_AVAILABLE_ABOUT_THE_USER_RATED_MOVIES = 'Failed. No data available about the user-rated movies',
+    FAILED_SOMETHING_WENT_WRONG_WITH_THE_DATABASE = 'Failed. Something went wrong with the database',
     FINDING_RECOMMENDATIONS = 'Finding recommendations',
     FAILED_NO_MOVIES_NOT_ALREADY_RATED_ARE_AVAILABLE_FOR_RECOMMENDATION = 'Failed. No movies not already rated are available for recommendation',
+    WAITING_FOR_YOU_TUBE_SCRAPER = 'Waiting for YouTube scraper',
+    SCRAPING_YOU_TUBE_TRAILER_IDS = 'Scraping YouTube trailer ids',
     FINISHED = 'Finished'
 }
 
@@ -155,7 +154,7 @@ export type CheckStatusStatusGetResponses = {
 
 export type CheckStatusStatusGetResponse = CheckStatusStatusGetResponses[keyof CheckStatusStatusGetResponses];
 
-export type GetRecommendMoviesMoviesGetData = {
+export type GetRecommendationMoviesGetData = {
     body?: never;
     path?: never;
     query: {
@@ -167,25 +166,25 @@ export type GetRecommendMoviesMoviesGetData = {
     url: '/movies/';
 };
 
-export type GetRecommendMoviesMoviesGetErrors = {
+export type GetRecommendationMoviesGetErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type GetRecommendMoviesMoviesGetError = GetRecommendMoviesMoviesGetErrors[keyof GetRecommendMoviesMoviesGetErrors];
+export type GetRecommendationMoviesGetError = GetRecommendationMoviesGetErrors[keyof GetRecommendationMoviesGetErrors];
 
-export type GetRecommendMoviesMoviesGetResponses = {
+export type GetRecommendationMoviesGetResponses = {
     /**
-     * Response Get Recommend Movies Movies  Get
+     * Response Get Recommendation Movies  Get
      *
      * Successful Response
      */
     200: Array<Movie>;
 };
 
-export type GetRecommendMoviesMoviesGetResponse = GetRecommendMoviesMoviesGetResponses[keyof GetRecommendMoviesMoviesGetResponses];
+export type GetRecommendationMoviesGetResponse = GetRecommendationMoviesGetResponses[keyof GetRecommendationMoviesGetResponses];
 
 export type GetPfpUrlPfpUrlsGetData = {
     body?: never;
